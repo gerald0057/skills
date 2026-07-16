@@ -6,6 +6,7 @@
 
 | Skill 名称 | 描述 | 目录 |
 | :--- | :--- | :--- |
+| SmartRF-DebugIO | 配置 DSView 采集并分析 2.4 GHz 无线调试 IO 时序（骨架） | [smartrf-debugio](./smartrf-debugio/) |
 
 > 💡 更多 Skill 正在开发中...
 

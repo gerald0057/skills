@@ -1,0 +1,4 @@
+interface:
+  display_name: "SmartRF-DebugIO"
+  short_description: "配置 DSView 采集并分析 2.4 GHz 无线调试 IO 时序"
+  default_prompt: "使用 $smartrf-debugio 配置采集并分析 2.4 GHz 无线发送、接收与 CPU 操作时序。"

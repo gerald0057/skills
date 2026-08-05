@@ -1,0 +1,8 @@
+stages:
+  - validate
+
+validate-skills:
+  stage: validate
+  image: python:3.12-alpine
+  script:
+    - python3 scripts/validate-repository.py

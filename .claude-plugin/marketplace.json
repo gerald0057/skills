@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "gerald0057-skills",
+  "owner": {
+    "name": "gerald0057",
+    "url": "https://github.com/gerald0057"
+  },
+  "description": "Installable SmartRF agent skills",
+  "plugins": [
+    {
+      "name": "smartrf-skills",
+      "source": "./",
+      "description": "SmartRF diagnostics and wireless DebugIO analysis skills",
+      "category": "Developer Tools",
+      "tags": [
+        "smartrf",
+        "wireless",
+        "diagnostics"
+      ]
+    }
+  ]
+}

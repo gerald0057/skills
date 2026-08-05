@@ -34,6 +34,38 @@
 本仓库不需要执行 `pip install`、`npm install` 或安装项目级 Python/Node.js 依赖。
 Node.js 只在选择 npm 方式安装 Codex 或 Claude Code 时需要。
 
+#### 自动检查本地环境
+
+在仓库根目录运行 Doctor，可以一次检查 Git、GitHub CLI、`gh skill`、Python 3、SSH
+以及 Codex、Claude Code：
+
+```bash
+./scripts/doctor.sh
+```
+
+成功输出示例（版本和安装路径仅作示意）：
+
+```text
+Local environment doctor
+
+[PASS] git: git version 2.34.1 (/usr/bin/git)
+[PASS] gh: 2.97.0 (/usr/bin/gh)
+[PASS] gh skill: install command is available
+[PASS] python: Python 3.13.13 (/opt/python/bin/python3)
+[PASS] ssh: OpenSSH_8.9p1, OpenSSL 3.0.2 (/usr/bin/ssh)
+[PASS] codex: codex-cli 0.146.0 (/home/user/.local/bin/codex)
+[PASS] claude: 2.1.222 (Claude Code) (/home/user/.local/bin/claude)
+
+Summary: 7 passed, 0 warnings, 0 failures.
+```
+
+Doctor 只读取本地命令和版本信息，不联网、不修改配置，也不输出凭据。Git、GitHub CLI
+2.90.0+、`gh skill` 和 Python 3 缺失时显示 `FAIL` 并返回退出码 `1`；SSH 或 Agent
+未安装时仅显示 `WARN`。传入未知参数时返回退出码 `2`。
+
+该脚本需要 POSIX shell；Linux、macOS 和 WSL 可直接运行。Windows 原生 PowerShell
+用户可按下面各节的验证命令逐项检查。
+
 #### 1. 安装 Git 和 Python 3
 
 Debian/Ubuntu：

@@ -1,5 +1,5 @@
 ---
-name: analyze-smartrf-diagnostics
+name: smartrf-diagnostics
 description: 分析 SmartRF v4 的 `srf_debug -a`、分区诊断、协议栈事件日志以及 Host/Device 对照快照，覆盖链路状态、连接实现、配对、handler、队列、统计、连接参数控制、CQA、PHY 时序和寄存器。用于定位配对或连接失败、主动或异常断连、supervision、ISR late/skip、subinterval/F8K、参考时钟同步、device 相位跟踪、跳频恢复、队列溢出、丢包/重传、信道质量、低功耗和 PHY 配置异常。
 ---
 

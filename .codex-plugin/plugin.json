@@ -1,6 +1,6 @@
 {
   "name": "smartrf-skills",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "SmartRF diagnostics and wireless DebugIO analysis skills",
   "author": {
     "name": "gerald0057",

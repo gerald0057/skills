@@ -8,7 +8,7 @@
 
 | Skill | 用途 | 目录 |
 | --- | --- | --- |
-| `analyze-smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/analyze-smartrf-diagnostics`](skills/analyze-smartrf-diagnostics/) |
+| `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
 | `smartrf-debugio` | 使用 gx-dsview-cli 采集并分析无线 DebugIO 时序 | [`skills/smartrf-debugio`](skills/smartrf-debugio/) |
 
 ## 安装
@@ -215,7 +215,7 @@ Git 仓库内安装，适合测试或团队项目。
 安装前可以先预览仓库中的 Skill：
 
 ```bash
-gh skill preview gerald0057/skills analyze-smartrf-diagnostics
+gh skill preview gerald0057/skills smartrf-diagnostics
 gh skill preview gerald0057/skills smartrf-debugio
 ```
 
@@ -241,16 +241,16 @@ gh skill install gerald0057/skills \
 
 ```bash
 gh skill install gerald0057/skills \
-  analyze-smartrf-diagnostics \
+  smartrf-diagnostics \
   --agent codex \
   --scope user
 ```
 
-仓库发布 tag 后，可以安装指定 tag 或 commit SHA。例如固定到 `v0.1.0`：
+仓库发布 tag 后，可以安装指定 tag 或 commit SHA。例如固定到 `v0.2.0`：
 
 ```bash
 gh skill install gerald0057/skills \
-  analyze-smartrf-diagnostics@v0.1.0 \
+  smartrf-diagnostics@v0.2.0 \
   --agent codex \
   --scope user
 ```
@@ -350,13 +350,13 @@ gh skill list \
 在 Codex 中运行 `/skills`，然后显式调用：
 
 ```text
-$analyze-smartrf-diagnostics 请说明分析 srf_debug -a 的检查顺序，不要执行命令。
+$smartrf-diagnostics 请说明分析 srf_debug -a 的检查顺序，不要执行命令。
 ```
 
 在 Claude Code 中直接调用：
 
 ```text
-/analyze-smartrf-diagnostics 请说明诊断流程，不要执行命令。
+/smartrf-diagnostics 请说明诊断流程，不要执行命令。
 ```
 
 如果新安装的 Skill 没有出现，重新启动对应 Agent。
@@ -391,7 +391,7 @@ claude plugin details smartrf-skills@gerald0057-skills
 插件 Skill 带有命名空间，例如：
 
 ```text
-/smartrf-skills:analyze-smartrf-diagnostics 请说明诊断流程。
+/smartrf-skills:smartrf-diagnostics 请说明诊断流程。
 ```
 
 开发时也可以在仓库根目录直接加载，不创建安装记录：
@@ -401,6 +401,21 @@ claude --plugin-dir .
 ```
 
 ## 更新、重复安装与卸载
+
+### 从 0.1.x 迁移到 0.2.0
+
+`analyze-smartrf-diagnostics` 已重命名为 `smartrf-diagnostics`。更新工具不会自动把已经
+安装的旧目录改名，因此升级时应先按下文重新安装全部 Skill，确认新名称可用，再按照
+“卸载 standalone skill”中的方法删除旧名称对应的精确目录。符号链接安装用户可以先执行：
+
+```bash
+unlink "$HOME/.agents/skills/analyze-smartrf-diagnostics"
+unlink "$HOME/.claude/skills/analyze-smartrf-diagnostics"
+./scripts/install-local.sh all
+```
+
+只删除实际存在且确认属于本仓库的旧链接；如果只安装了一个 Agent，只执行对应的
+`unlink` 和安装命令。
 
 ### GitHub 安装
 
@@ -447,9 +462,9 @@ git pull
 卸载符号链接：
 
 ```bash
-unlink "$HOME/.agents/skills/analyze-smartrf-diagnostics"
+unlink "$HOME/.agents/skills/smartrf-diagnostics"
 unlink "$HOME/.agents/skills/smartrf-debugio"
-unlink "$HOME/.claude/skills/analyze-smartrf-diagnostics"
+unlink "$HOME/.claude/skills/smartrf-diagnostics"
 unlink "$HOME/.claude/skills/smartrf-debugio"
 ```
 
@@ -488,7 +503,7 @@ claude plugin marketplace remove gerald0057-skills
 
 ## 环境说明
 
-- `analyze-smartrf-diagnostics` 是纯说明型 Skill；若工作区包含 SmartRF v4 源码，可进一步校准字段语义。
+- `smartrf-diagnostics` 是纯说明型 Skill；若工作区包含 SmartRF v4 源码，可进一步校准字段语义。
 - `smartrf-debugio` 的实时采集能力依赖 Linux、`gx-dsview-cli` 和兼容逻辑分析仪；离线分析不要求连接硬件。
 - Skill 可能指导 Agent 执行本地命令。安装前应检查 `SKILL.md` 和附带资源，并遵循客户端权限提示。
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "SmartRF-DebugIO"
+  short_description: "使用 gx-dsview-cli 采集并分析 2.4 GHz 无线 DebugIO"
+  default_prompt: "使用 $smartrf-debugio 启动 gx-dsview-cli 采集并分析无线 TX、RX 与同步时序。"

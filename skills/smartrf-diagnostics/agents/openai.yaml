@@ -1,0 +1,4 @@
+interface:
+  display_name: "SmartRF Diagnostics"
+  short_description: "分析 SmartRF v4 全量诊断、计数器与链路故障"
+  default_prompt: "使用 $smartrf-diagnostics 分析这份 srf_debug -a 输出并定位最可能的故障层级。"

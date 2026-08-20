@@ -1,9 +1,9 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "smartrf-skills",
-  "displayName": "SmartRF Skills",
-  "version": "0.2.0",
-  "description": "SmartRF diagnostics and wireless DebugIO analysis skills",
+  "displayName": "Agent Skills Collection",
+  "version": "0.3.0",
+  "description": "A curated collection of independently usable agent skills for engineering workflows",
   "author": {
     "name": "gerald0057",
     "url": "https://github.com/gerald0057"
@@ -12,10 +12,10 @@
   "repository": "https://github.com/gerald0057/skills",
   "license": "MIT",
   "keywords": [
-    "smartrf",
-    "wireless",
-    "diagnostics",
-    "debugio"
+    "agent-skills",
+    "developer-tools",
+    "engineering",
+    "workflows"
   ],
   "skills": "./skills/"
 }

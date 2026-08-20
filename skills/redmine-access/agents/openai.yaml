@@ -1,0 +1,4 @@
+interface:
+  display_name: "Redmine Access"
+  short_description: "紧凑查询 Redmine 数据，并在逐次确认后安全写入"
+  default_prompt: "使用 $redmine-access 获取完成当前任务所需的 Redmine 数据。"

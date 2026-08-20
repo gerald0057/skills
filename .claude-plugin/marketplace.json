@@ -5,17 +5,18 @@
     "name": "gerald0057",
     "url": "https://github.com/gerald0057"
   },
-  "description": "Installable SmartRF agent skills",
+  "description": "A curated source of independently usable agent skills",
   "plugins": [
     {
       "name": "smartrf-skills",
       "source": "./",
-      "description": "SmartRF diagnostics and wireless DebugIO analysis skills",
+      "description": "A curated collection of independently usable agent skills for engineering workflows",
       "category": "Developer Tools",
       "tags": [
-        "smartrf",
-        "wireless",
-        "diagnostics"
+        "agent-skills",
+        "developer-tools",
+        "engineering",
+        "workflows"
       ]
     }
   ]

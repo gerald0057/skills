@@ -1,7 +1,7 @@
 {
   "name": "smartrf-skills",
-  "version": "0.2.0",
-  "description": "SmartRF diagnostics and wireless DebugIO analysis skills",
+  "version": "0.3.0",
+  "description": "A curated collection of independently usable agent skills for engineering workflows",
   "author": {
     "name": "gerald0057",
     "url": "https://github.com/gerald0057"
@@ -10,24 +10,21 @@
   "repository": "https://github.com/gerald0057/skills",
   "license": "MIT",
   "keywords": [
-    "smartrf",
-    "wireless",
-    "diagnostics",
-    "debugio"
+    "agent-skills",
+    "developer-tools",
+    "engineering",
+    "workflows"
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "SmartRF Skills",
-    "shortDescription": "Analyze SmartRF diagnostics and wireless DebugIO timing.",
-    "longDescription": "A collection of reusable skills for SmartRF v4 diagnostics and gx-dsview-cli based wireless DebugIO capture and timing analysis.",
+    "displayName": "Agent Skills Collection",
+    "shortDescription": "Install independently usable engineering skills.",
+    "longDescription": "A curated collection of self-contained skills that agents can install and use independently or compose for larger engineering workflows.",
     "developerName": "gerald0057",
     "category": "Developer Tools",
-    "capabilities": [
-      "Analysis"
-    ],
+    "capabilities": ["Skills"],
     "defaultPrompt": [
-      "Analyze this SmartRF diagnostic output.",
-      "Analyze this wireless DebugIO capture."
+      "Use the most relevant installed skill for this task."
     ]
   }
 }

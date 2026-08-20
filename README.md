@@ -1,6 +1,6 @@
-# SmartRF Agent Skills
+# Agent Skills
 
-面向 SmartRF 开发与诊断场景的可安装 Agent Skills 仓库。Skill 遵循开放的
+集中维护、可分别安装的 Agent Skills 仓库。Skill 遵循开放的
 [Agent Skills 规范](https://agentskills.io/specification)，可供 Codex、Claude Code
 以及其他兼容客户端使用。
 
@@ -10,6 +10,18 @@
 | --- | --- | --- |
 | `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
 | `smartrf-debugio` | 使用 gx-dsview-cli 采集并分析无线 DebugIO 时序 | [`skills/smartrf-debugio`](skills/smartrf-debugio/) |
+| `redmine-access` | 为其他指令或 Skill 提供紧凑 Redmine 查询与逐次确认的安全写入 | [`skills/redmine-access`](skills/redmine-access/) |
+
+`redmine-access` 首次使用时通过本地交互式向导配置，API Key 保存在
+`~/.config/skills/redmine-access/`，不会写入本仓库。读取默认返回有限分页的摘要；所有写入逐次确认，删除永久禁止。
+
+## 仓库与发布边界
+
+- `skills/<skill-name>/` 是独立能力和独立安装单元；每个目录自己维护触发说明、执行规则与资源。
+- 根 README 是动态目录，新增 Skill 时在这里增加索引。
+- 根 `.codex-plugin/`、`.claude-plugin/` 是可选的整包安装元数据，只描述集合本身，不枚举具体 Skill 或场景。
+- 新增 Skill 不需要改写根插件说明；仅在发布新的整包版本时同步提升两个插件 manifest 的版本。
+- 若将来要求每个 Skill 都能在插件市场中单独安装，应为它建立独立插件包和 marketplace 条目，而不是继续扩充根 manifest。
 
 ## 安装
 
@@ -23,7 +35,7 @@
 | 依赖 | 是否必需 | 用途 |
 | --- | --- | --- |
 | Git | 本地安装必需 | 克隆 GitHub、GitLab 仓库以及后续更新 |
-| Python 3 | 推荐 | 运行仓库结构校验脚本；Skill 本身不依赖第三方 Python 包 |
+| Python 3 | 使用 `redmine-access` 或维护仓库时必需 | 运行受控 Redmine 客户端和仓库结构校验；不依赖第三方 Python 包 |
 | curl 或 wget | 安装工具时可能需要 | 下载 Codex、Claude Code 或 GitHub CLI 的官方安装资源 |
 | OpenSSH 客户端 | 使用 SSH 克隆时必需 | 访问私有 GitLab 等 SSH Git 仓库 |
 | POSIX shell | 符号链接安装必需 | 运行 `scripts/install-local.sh`；Linux、macOS 和 WSL 可直接使用 |
@@ -249,6 +261,7 @@ Git 仓库内安装，适合测试或团队项目。
 ```bash
 gh skill preview gerald0057/skills smartrf-diagnostics
 gh skill preview gerald0057/skills smartrf-debugio
+gh skill preview gerald0057/skills redmine-access
 ```
 
 安装全部 Skill 到 Codex：
@@ -278,11 +291,11 @@ gh skill install gerald0057/skills \
   --scope user
 ```
 
-仓库发布 tag 后，可以安装指定 tag 或 commit SHA。例如固定到 `v0.2.0`：
+仓库发布 tag 后，可以安装指定 tag 或 commit SHA。例如固定到 `v0.3.0`：
 
 ```bash
 gh skill install gerald0057/skills \
-  smartrf-diagnostics@v0.2.0 \
+  redmine-access@v0.3.0 \
   --agent codex \
   --scope user
 ```
@@ -357,6 +370,13 @@ gh skill install . \
 ```bash
 ./scripts/install-local.sh codex
 ./scripts/install-local.sh claude-code
+```
+
+只安装一个 Skill，可在 Agent 参数后追加 Skill 名称：
+
+```bash
+./scripts/install-local.sh codex redmine-access
+./scripts/install-local.sh all redmine-access
 ```
 
 脚本创建用户级符号链接，不复制文件，也不会覆盖已有文件或目录。重复执行同一个安装

@@ -11,6 +11,7 @@
 | `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
 | `smartrf-debugio` | 使用 gx-dsview-cli 采集并分析无线 DebugIO 时序 | [`skills/smartrf-debugio`](skills/smartrf-debugio/) |
 | `redmine-access` | 为其他指令或 Skill 提供紧凑 Redmine 查询与逐次确认的安全写入 | [`skills/redmine-access`](skills/redmine-access/) |
+| `weekly-report` | 根据 iBrain 项目看板整理本周总结并合并下周计划 | [`skills/weekly-report`](skills/weekly-report/) |
 
 `redmine-access` 首次使用时通过本地交互式向导配置，API Key 保存在
 `~/.config/skills/redmine-access/`，不会写入本仓库。读取默认返回有限分页的摘要；所有写入逐次确认，删除永久禁止。
@@ -262,6 +263,7 @@ Git 仓库内安装，适合测试或团队项目。
 gh skill preview gerald0057/skills smartrf-diagnostics
 gh skill preview gerald0057/skills smartrf-debugio
 gh skill preview gerald0057/skills redmine-access
+gh skill preview gerald0057/skills weekly-report
 ```
 
 安装全部 Skill 到 Codex：

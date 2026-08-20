@@ -43,6 +43,8 @@ def validate_skill(skill_dir: Path, errors: list[str]) -> None:
     if not skill_md.is_file():
         fail(errors, f"{relative}: missing SKILL.md")
         return
+    if (skill_dir / "README.md").exists():
+        fail(errors, f"{relative}: move skill documentation into SKILL.md or references/")
 
     metadata = parse_frontmatter(skill_md, errors)
     name = metadata.get("name", "")
@@ -115,6 +117,11 @@ def validate_manifests(errors: list[str]) -> None:
 
 def main() -> int:
     errors: list[str] = []
+    for misplaced in sorted(ROOT.glob("*/SKILL.md")):
+        fail(
+            errors,
+            f"{misplaced.parent.relative_to(ROOT)}: skill directories must live under skills/",
+        )
     if not SKILLS_ROOT.is_dir():
         fail(errors, "missing skills/ directory")
     else:

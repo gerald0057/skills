@@ -1,0 +1,4 @@
+interface:
+  display_name: "Weekly Report"
+  short_description: "根据项目看板整理本周总结并合并下周计划"
+  default_prompt: "使用 $weekly-report 整理指定周次的 iBrain 周报。"

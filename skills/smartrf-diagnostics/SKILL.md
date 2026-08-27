@@ -1,45 +1,55 @@
 ---
 name: smartrf-diagnostics
-description: 分析 SmartRF v4 的 `srf_debug -a`、分区诊断、协议栈事件日志以及 Host/Device 对照快照，覆盖链路状态、连接实现、配对、handler、队列、统计、连接参数控制、CQA、PHY 时序和寄存器。用于定位配对或连接失败、主动或异常断连、supervision、ISR late/skip、subinterval/F8K、参考时钟同步、device 相位跟踪、跳频恢复、队列溢出、丢包/重传、信道质量、低功耗和 PHY 配置异常。
+description: 按 SmartRF 协议栈版本分析 `srf_debug`、事件日志、Host/Device 对照快照和本地源码。自动区分 legacy 与 v4.2.x 诊断布局，以及 debug/release/unknown 构建；覆盖连接、跳频、CQA、重传、队列、时序、subinterval、参考时钟、PHY 和精简库日志。用于定位配对连接失败、异常断连、ISR late、丢包、回报率下降和信道质量问题。
 ---
 
 # SmartRF Diagnostics
 
-## 读取参考资料
+## 先识别诊断上下文
 
-- 分析完整 `srf_debug -a` 时，完整读取 [fields.md](references/fields.md)，不要跳过没有明显异常的分区。
-- 判断根因、比较 Host/Device 或比较前后两份快照时，完整读取 [reasoning.md](references/reasoning.md)。
-- 只收到单个分区时，读取 `fields.md` 的对应分区和 `reasoning.md` 的“证据规则”。
+在解释字段前，先确定固件版本、日志布局、库变体和源码可用性。优先运行：
+
+```bash
+python3 scripts/detect_context.py LOG_FILE [--source-root PATH] [--version 4.2.4]
+```
+
+也可将日志通过标准输入传入。脚本路径相对于本 skill 目录。
+
+识别规则：
+
+1. 用户明确指定的协议栈版本优先；否则读取 `[srf_core] stack=X.Y.Z`，再兼容旧格式 `srf_init ok version=X.Y.Z`。
+2. `link=conn_impl_c/1.4.0-debug` 中的版本是 link layer 版本，不是协议栈版本。libismbb、librf 版本也不能作为 SmartRF 版本。
+3. 多次启动日志出现多个协议栈版本时必须报告冲突，不可静默选择。
+4. 没有版本号时，仅可根据 section 布局选择参考资料，不得推断精确 patch 版本。
+5. 读取 [version-map.json](references/version-map.json)，再完整读取所选版本的字段和推理资料。
+
+路由：
+
+- v4.2.x 或存在 `[conn_state]`、`[channel_quality]`：读取 [v4.2 fields](references/versions/v4.2/fields.md)、[v4.2 reasoning](references/versions/v4.2/reasoning.md)。
+- 旧版单体 `[connected_impl]` 布局或未知旧日志：读取 [legacy fields](references/versions/legacy/fields.md)、[legacy reasoning](references/versions/legacy/reasoning.md)。
+- 所有分析都读取 [evidence rules](references/common/evidence-rules.md)；日志裁剪或库变体不明确时再读取 [build variants](references/common/build-variants.md)。
+
+## 决定源码分析模式
+
+按以下顺序发现源码：用户给出的 `--source-root`、当前目录及其父目录中的 `subsys/wireless/smartrf_v4/`、旧路径 `subsys/wireless/smartrf/v4/`。v4.2.x 的具体入口见 [source map](references/versions/v4.2/source-map.md)。
+
+- 源码版本与日志一致：同时分析日志和源码。对关键字段依次确认打印点、数据结构、更新点、清零/生命周期。
+- 源码版本与日志不一致：固件日志版本是运行时事实；版本参考资料为主，本地源码只能提供待验证假设。
+- 没有源码：仅依据日志和对应版本资料分析，明确无法核对的实现细节。
+- release 库：接受诊断字段较少，不把缺字段直接判为异常。
+
+禁止为了找字段而递归读取全部源码。优先 `rg` 精确搜索 section 名、打印标签或字段名。
 
 ## 执行分析
 
-1. 识别日志来源：SmartRF 版本、role、采集时刻、当前状态，以及快照是在运行中还是断开后取得。将 core 事件日志与快照分开处理。
-2. 清点 `[link]`、`[connected_impl]`、`[pair_info]`、`[pending_pair_info]`、`[handlers]`、`[queues]`、`[statistics]`、`[ctrl]`、`[cqa]`、`[phy]`。明确缺失、裁剪、`compiled_out`、`unavailable` 和版本新增字段。
-3. 先检查状态一致性，再检查 RF 时间和恢复状态，最后检查数据路径。不要从一个累计计数器直接推断当前正在失败。
-4. 对累计计数器优先计算两份快照的增量和比率。只有一份快照时，说明它只能证明“历史上发生过”，不能给出发生频率或当前趋势。
-5. 同时有 Host 和 Device 时，按连接参数、chanmap、当前/目标 hop、event、PID、收发统计和故障时间做对照。考虑两台设备的本地 timer 数值没有共同绝对时间基准。
-6. 将结论分成：直接证据、强推断、待验证假设。至少给出一个最可能根因和支持它的跨分区证据，不罗列没有排序的可能性。
-7. 给出最小补充采集建议：优先请求同一时刻两端 `srf_debug -a`、清零后固定时长的统计、故障前后事件日志或 DebugIO 波形。不要一开始就建议增加大量统计。
-
-## 使用源码校准
-
-当当前工作区包含 SmartRF v4 源码时，以以下文件为字段和语义权威来源：
-
-- `subsys/wireless/smartrf_v4/src/srf_debug.c`
-- `subsys/wireless/smartrf_v4/src/handler/connected/conn_impl_c/`
-- `subsys/wireless/smartrf_v4/doc/`
-
-遇到参考资料未覆盖的新字段时先检索打印点和字段写入点，再解释；不要仅凭名称猜测。不要修改代码，除非用户明确要求修复或增加诊断。
+1. 分开处理启动/事件时间线与 `srf_debug` 快照，记录 role、state、连接参数和采集时刻。
+2. 清点实际出现的 section，并将缺失项标为 `not_captured`、`compiled_out`、`not_applicable`、`unavailable` 或 `unknown_version`；证据不足时不要强行分类。
+3. 先检查两端状态、地址、连接参数和 chanmap 一致性，再检查时序/恢复，最后检查 RF→transport→profile/USB 数据路径。
+4. 累计计数优先比较清零后固定窗口的增量。单份快照只能证明历史事件；`--stats-clear` 后的区间最大值与链路 lifetime 最大值不可混淆。
+5. Host/Device 对照时比较 event、PID、chanmap、当前/目标 hop、错误增量和重传；两端 timer 没有共同绝对时间基准。
+6. 输出直接证据、强推断、待验证假设，并按可能性排序。至少用两个相互独立的字段或 section 支撑首要结论。
+7. 只建议最小补充采集：同一时间窗口的两端快照、`-s`/`--stats-clear`、故障前后事件日志或必要的 DebugIO 波形。
 
 ## 输出格式
 
-按以下顺序组织结果：
-
-1. 一句话结论与故障层级；
-2. 时间线或当前状态；
-3. 关键证据，关联至少两个分区；
-4. 各分区异常与正常项；
-5. 不确定性和被排除的原因；
-6. 下一步最小验证动作。
-
-保留关键数值及单位。对 wrap-around 的 16/32 位 event 或 timer 使用模运算语义，不把回绕后的负差直接解释成错误。
+按以下顺序组织：一句话结论；版本/构建/源码置信度；状态与时间线；关键跨区证据；正常项和异常项；不确定性；下一步最小验证。保留关键数值和单位，对 16/32 位 event、timer 回绕使用模运算语义。

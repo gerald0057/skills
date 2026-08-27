@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "routes": [
+    {
+      "version": "4.2.x",
+      "match": "^4\\.2\\.[0-9]+$",
+      "layout_markers": ["[conn_state]", "[channel_quality]"],
+      "fields": "references/versions/v4.2/fields.md",
+      "reasoning": "references/versions/v4.2/reasoning.md",
+      "source_map": "references/versions/v4.2/source-map.md",
+      "verified_against": "4.2.4"
+    },
+    {
+      "version": "legacy",
+      "match": "^(4\\.[01]\\.|unknown$)",
+      "layout_markers": ["[connected_impl]"],
+      "fields": "references/versions/legacy/fields.md",
+      "reasoning": "references/versions/legacy/reasoning.md"
+    }
+  ],
+  "fallback": "legacy"
+}
+

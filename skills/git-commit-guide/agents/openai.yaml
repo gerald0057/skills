@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Commit Guide"
+  short_description: "按指定标识生成简洁规范的中文 Git 提交信息"
+  default_prompt: "使用 $git-commit-guide 为当前代码变更生成规范的提交信息。"

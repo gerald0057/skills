@@ -32,6 +32,13 @@ STATE_ROOT = (
 RUNTIME_ROOT = STATE_ROOT / "skills" / "redmine-access"
 PENDING_DIR = RUNTIME_ROOT / "pending"
 AUDIT_FILE = RUNTIME_ROOT / "audit.jsonl"
+_data_home = os.environ.get("XDG_DATA_HOME")
+DATA_ROOT = (
+    Path(_data_home).expanduser()
+    if _data_home and Path(_data_home).expanduser().is_absolute()
+    else Path.home() / ".local" / "share"
+)
+DOWNLOAD_ROOT = DATA_ROOT / "skills" / "redmine-access" / "downloads"
 
 MAX_CONFIG_BYTES = 1_000_000
 MAX_RESPONSE_BYTES = 8_000_000
@@ -75,6 +82,10 @@ WRITE_OPERATIONS = {
     "time_entry.create",
     "attachment.upload",
 }
+LOCAL_CONFIRM_OPERATIONS = {
+    "attachment.download",
+}
+CONFIRM_OPERATIONS = WRITE_OPERATIONS | LOCAL_CONFIRM_OPERATIONS
 DELETE_OPERATIONS = {
     "issue.delete",
     "project.delete",
@@ -82,7 +93,7 @@ DELETE_OPERATIONS = {
     "time_entry.delete",
     "attachment.delete",
 }
-ALLOWED_OPERATIONS = READ_OPERATIONS | WRITE_OPERATIONS | DELETE_OPERATIONS
+ALLOWED_OPERATIONS = READ_OPERATIONS | CONFIRM_OPERATIONS | DELETE_OPERATIONS
 
 CREATE_ISSUE_FIELDS = {
     "project_id",
@@ -333,6 +344,13 @@ def validate_permissions(document: dict[str, Any]) -> None:
             isinstance(item, str) and item and item != "*" for item in projects
         ):
             raise RedmineAccessError(f"profile {name} 的 write_projects 无效")
+        download_projects = policy.get("attachment_download_projects", [])
+        if not isinstance(download_projects, list) or not all(
+            isinstance(item, str) and item and item != "*" for item in download_projects
+        ):
+            raise RedmineAccessError(
+                f"profile {name} 的 attachment_download_projects 无效"
+            )
         create_fields = policy.get("issue_create_fields", [])
         if not isinstance(create_fields, list) or not all(
             isinstance(item, str) and item in CREATE_ISSUE_FIELDS for item in create_fields
@@ -358,6 +376,11 @@ def validate_permissions(document: dict[str, Any]) -> None:
         maximum = policy.get("max_attachment_bytes", 10_000_000)
         if not isinstance(maximum, int) or not 1 <= maximum <= 100_000_000:
             raise RedmineAccessError("max_attachment_bytes 必须在 1 到 100000000 之间")
+        download_maximum = policy.get("max_attachment_download_bytes", 10_000_000)
+        if not isinstance(download_maximum, int) or not 1 <= download_maximum <= 500_000_000:
+            raise RedmineAccessError(
+                "max_attachment_download_bytes 必须在 1 到 500000000 之间"
+            )
         maximum_hours = policy.get("max_time_entry_hours", 24)
         if not isinstance(maximum_hours, (int, float)) or not 0 < maximum_hours <= 24:
             raise RedmineAccessError("max_time_entry_hours 必须大于 0 且不超过 24")
@@ -393,6 +416,19 @@ def require_write_project(policy: dict[str, Any], identifier: str) -> None:
     allowed = policy.get("write_projects", [])
     if identifier not in allowed:
         raise RedmineAccessError(f"项目 {identifier!r} 不在 write_projects 范围内")
+
+
+def require_operation_project(
+    policy: dict[str, Any], operation: str, identifier: str
+) -> None:
+    if operation == "attachment.download":
+        allowed = policy.get("attachment_download_projects", [])
+        if identifier not in allowed:
+            raise RedmineAccessError(
+                f"项目 {identifier!r} 不在 attachment_download_projects 范围内"
+            )
+        return
+    require_write_project(policy, identifier)
 
 
 def validate_custom_fields(policy: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -493,6 +529,92 @@ class RedmineHTTP:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RedmineAccessError("Redmine 返回了无效 JSON") from exc
 
+    def download(
+        self,
+        endpoint: str,
+        destination: Path,
+        *,
+        expected_size: int,
+        maximum_size: int,
+    ) -> dict[str, Any]:
+        if (
+            not endpoint.startswith("/attachments/download/")
+            or "://" in endpoint
+            or "?" in endpoint
+            or any(part == ".." for part in endpoint.split("/"))
+        ):
+            raise RedmineAccessError("附件下载 endpoint 不是受控的站内路径")
+        if not 0 <= expected_size <= maximum_size:
+            raise RedmineAccessError("附件大小超出本地下载权限")
+        validate_download_destination(destination)
+        url = self.base_url + endpoint
+        request = Request(
+            url,
+            headers={
+                "Accept": "application/octet-stream",
+                "X-Redmine-API-Key": self.api_key,
+                "User-Agent": "redmine-access-skill/1",
+            },
+            method="GET",
+        )
+        temporary = destination.parent / f".{destination.name}.{secrets.token_hex(8)}.part"
+        try:
+            try:
+                response_context = self.opener.open(request, timeout=30)
+            except HTTPError as exc:
+                detail = _decode_error(exc.read(1001), self.api_key)
+                raise RedmineAccessError(
+                    f"附件下载 HTTP {exc.code}: {detail}"
+                ) from exc
+            except (URLError, TimeoutError, OSError) as exc:
+                raise RedmineAccessError(f"附件下载失败：{exc}") from exc
+            with response_context as response:
+                if response.status != 200:
+                    raise RedmineAccessError(
+                        f"附件下载返回非预期状态 {response.status}"
+                    )
+                declared = response.headers.get("Content-Length")
+                if declared is not None:
+                    try:
+                        declared_size = int(declared)
+                    except ValueError as exc:
+                        raise RedmineAccessError("附件 Content-Length 无效") from exc
+                    if declared_size > maximum_size:
+                        raise RedmineAccessError("附件响应超过本地下载大小限制")
+                    if declared_size != expected_size:
+                        raise RedmineAccessError("附件响应大小与 Redmine 元数据不一致")
+                descriptor = os.open(
+                    temporary,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                )
+                digest = hashlib.sha256()
+                received = 0
+                with os.fdopen(descriptor, "wb") as stream:
+                    while chunk := response.read(1024 * 1024):
+                        received += len(chunk)
+                        if received > maximum_size or received > expected_size:
+                            raise RedmineAccessError("附件实际内容超过允许大小")
+                        stream.write(chunk)
+                        digest.update(chunk)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            if received != expected_size:
+                raise RedmineAccessError("附件实际大小与 Redmine 元数据不一致")
+            try:
+                os.link(temporary, destination)
+            except FileExistsError as exc:
+                raise RedmineAccessError("目标附件文件已存在，拒绝覆盖") from exc
+            os.chmod(destination, 0o600)
+            temporary.unlink()
+            return {
+                "path": str(destination),
+                "bytes": received,
+                "sha256": digest.hexdigest(),
+            }
+        finally:
+            temporary.unlink(missing_ok=True)
+
 
 def _decode_error(raw: bytes, secret: str) -> str:
     if not raw:
@@ -507,6 +629,144 @@ def _decode_error(raw: bytes, secret: str) -> str:
     except (UnicodeDecodeError, json.JSONDecodeError):
         detail = raw[:1000].decode("utf-8", errors="replace")
     return detail.replace(secret, "[REDACTED]")
+
+
+def _url_origin(value: str) -> tuple[str, str, int | None]:
+    parsed = urlparse(value)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RedmineAccessError("URL 端口无效") from exc
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80 if parsed.scheme == "http" else None
+    return parsed.scheme.lower(), (parsed.hostname or "").lower(), port
+
+
+def safe_attachment_filename(value: Any) -> str:
+    if not isinstance(value, str) or not value or value in {".", ".."}:
+        raise RedmineAccessError("附件文件名无效")
+    if (
+        Path(value).name != value
+        or "/" in value
+        or "\\" in value
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        or len(value.encode("utf-8")) > 180
+    ):
+        raise RedmineAccessError("附件文件名包含不安全字符或过长")
+    return value
+
+
+def attachment_download_endpoint(
+    base_url: str,
+    content_url: Any,
+    attachment_id: int,
+    filename: str,
+) -> str:
+    if not isinstance(content_url, str) or not content_url:
+        raise RedmineAccessError("附件元数据缺少 content_url")
+    parsed = urlparse(content_url)
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise RedmineAccessError("附件 content_url 包含不允许的凭据或参数")
+    if _url_origin(content_url) != _url_origin(base_url):
+        raise RedmineAccessError("附件 content_url 不是当前 Redmine 同源地址")
+    base_path = urlparse(base_url).path.rstrip("/")
+    expected_prefix = f"{base_path}/attachments/download/{attachment_id}/"
+    if not parsed.path.startswith(expected_prefix):
+        raise RedmineAccessError("附件 content_url 路径与附件 ID 不匹配")
+    safe_name = safe_attachment_filename(filename)
+    return f"/attachments/download/{attachment_id}/{quote(safe_name, safe='')}"
+
+
+def download_directory(
+    profile_name: str,
+    issue_id: int,
+    requested: str | None,
+) -> Path:
+    if requested:
+        raw = Path(requested).expanduser()
+        if not raw.is_absolute() or raw.is_symlink():
+            raise RedmineAccessError("下载目录必须是非符号链接的绝对路径")
+        try:
+            resolved = raw.resolve(strict=True)
+        except OSError as exc:
+            raise RedmineAccessError(f"下载目录不存在：{raw}") from exc
+        if not resolved.is_dir():
+            raise RedmineAccessError("下载目标不是目录")
+        return resolved
+    if DOWNLOAD_ROOT.is_symlink():
+        raise RedmineAccessError("拒绝使用符号链接下载根目录")
+    profile_dir = DOWNLOAD_ROOT / profile_name
+    issue_dir = profile_dir / str(issue_id)
+    for path in (DOWNLOAD_ROOT, profile_dir, issue_dir):
+        if path.is_symlink():
+            raise RedmineAccessError("拒绝使用符号链接下载目录")
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(path, 0o700)
+    return issue_dir.resolve(strict=True)
+
+
+def validate_download_destination(destination: Path) -> None:
+    if not destination.is_absolute() or destination.parent.is_symlink():
+        raise RedmineAccessError("附件目标路径不安全")
+    try:
+        parent = destination.parent.resolve(strict=True)
+    except OSError as exc:
+        raise RedmineAccessError("附件目标目录不存在") from exc
+    if not parent.is_dir() or parent != destination.parent:
+        raise RedmineAccessError("附件目标目录不是规范的普通目录")
+    if parent.stat().st_mode & 0o022:
+        raise RedmineAccessError("附件目标目录允许其他用户写入，拒绝下载")
+    if destination.exists() or destination.is_symlink():
+        raise RedmineAccessError("目标附件文件已存在，拒绝覆盖")
+
+
+def attachment_snapshot(
+    api: RedmineHTTP,
+    attachment: dict[str, Any],
+) -> dict[str, Any]:
+    attachment_id = attachment.get("id")
+    filename = safe_attachment_filename(attachment.get("filename"))
+    size = attachment.get("filesize")
+    content_type = attachment.get("content_type")
+    created_on = attachment.get("created_on")
+    if type(attachment_id) is not int or attachment_id <= 0:
+        raise RedmineAccessError("附件元数据缺少有效 ID")
+    if type(size) is not int or size < 0:
+        raise RedmineAccessError("附件元数据缺少有效大小")
+    if content_type is not None and not isinstance(content_type, str):
+        raise RedmineAccessError("附件 content_type 元数据无效")
+    if created_on is not None and not isinstance(created_on, str):
+        raise RedmineAccessError("附件 created_on 元数据无效")
+    endpoint = attachment_download_endpoint(
+        api.base_url,
+        attachment.get("content_url"),
+        attachment_id,
+        filename,
+    )
+    return {
+        "id": attachment_id,
+        "filename": filename,
+        "size": size,
+        "content_type": content_type,
+        "created_on": created_on,
+        "endpoint": endpoint,
+    }
+
+
+def issue_attachment(
+    api: RedmineHTTP,
+    issue_id: int,
+    attachment_id: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    issue = get_issue(api, issue_id, ["attachments"])
+    matches = [
+        item
+        for item in issue.get("attachments", [])
+        if isinstance(item, dict) and item.get("id") == attachment_id
+    ]
+    if len(matches) != 1:
+        raise RedmineAccessError("指定附件不属于该 Issue 或附件元数据不唯一")
+    return issue, attachment_snapshot(api, matches[0])
 
 
 def get_issue(api: RedmineHTTP, issue_id: int, includes: list[str] | None = None) -> dict[str, Any]:
@@ -660,7 +920,7 @@ def create_pending(
     before_updated_on: str | None = None,
 ) -> dict[str, Any]:
     require_operation(policy, operation)
-    require_write_project(policy, project_identifier)
+    require_operation_project(policy, operation, project_identifier)
     if RUNTIME_ROOT.is_symlink() or PENDING_DIR.is_symlink():
         raise RedmineAccessError("拒绝使用符号链接状态目录")
     PENDING_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -734,7 +994,11 @@ def load_pending(approval_id: str) -> tuple[Path, dict[str, Any]]:
 
 def append_audit(pending: dict[str, Any], result: str) -> None:
     target = pending.get("target") if isinstance(pending.get("target"), dict) else {}
-    safe_target = {key: target[key] for key in ("issue_id", "project") if key in target}
+    safe_target = {
+        key: target[key]
+        for key in ("issue_id", "attachment_id", "project")
+        if key in target
+    }
     body = pending.get("action", {}).get("body") or {}
     if isinstance(body, dict) and len(body) == 1 and isinstance(next(iter(body.values()), None), dict):
         body = next(iter(body.values()))
@@ -976,6 +1240,57 @@ def prepare_attachment(
     )
 
 
+def prepare_attachment_download(
+    api: RedmineHTTP,
+    profile_name: str,
+    profile: dict[str, Any],
+    policy: dict[str, Any],
+    issue_id: int,
+    attachment_id: int,
+    output_dir: str | None,
+) -> dict[str, Any]:
+    require_operation(policy, "attachment.download")
+    reject_api_key_content(output_dir, profile, "下载目录")
+    issue, attachment = issue_attachment(api, issue_id, attachment_id)
+    project = issue_project(api, issue)
+    require_operation_project(policy, "attachment.download", project["identifier"])
+    maximum = policy.get("max_attachment_download_bytes", 10_000_000)
+    if attachment["size"] > maximum:
+        raise RedmineAccessError("附件超过本地下载权限的大小限制")
+    directory = download_directory(profile_name, issue_id, output_dir)
+    destination = directory / f"{attachment_id}-{attachment['filename']}"
+    validate_download_destination(destination)
+    action_attachment = {
+        **attachment,
+        "destination": str(destination),
+    }
+    preview_attachment = {
+        key: value
+        for key, value in action_attachment.items()
+        if key != "endpoint"
+    }
+    reject_api_key_content(action_attachment, profile, "附件下载信息")
+    return create_pending(
+        profile_name=profile_name,
+        profile=profile,
+        policy=policy,
+        operation="attachment.download",
+        project_identifier=project["identifier"],
+        target={
+            "issue_id": issue_id,
+            "attachment_id": attachment_id,
+            "subject": issue.get("subject"),
+        },
+        action={
+            "kind": "attachment_download",
+            "issue_id": issue_id,
+            "attachment": action_attachment,
+        },
+        preview={"download": preview_attachment},
+        before_updated_on=issue.get("updated_on"),
+    )
+
+
 def _verify_pending_current(api: RedmineHTTP, pending: dict[str, Any]) -> None:
     operation = pending.get("operation")
     action = pending.get("action", {})
@@ -999,6 +1314,23 @@ def _verify_pending_current(api: RedmineHTTP, pending: dict[str, Any]) -> None:
         project = issue_project(api, issue)
         if project["identifier"] != pending.get("project_identifier"):
             raise RedmineAccessError("目标 Issue 所属项目已变化，原确认失效")
+    if operation == "attachment.download":
+        expected = action.get("attachment", {})
+        current_issue, current = issue_attachment(
+            api,
+            int(action.get("issue_id")),
+            int(expected.get("id")),
+        )
+        project = issue_project(api, current_issue)
+        if project["identifier"] != pending.get("project_identifier"):
+            raise RedmineAccessError("附件所属项目已变化，原确认失效")
+        comparable = {
+            key: expected.get(key)
+            for key in ("id", "filename", "size", "content_type", "created_on", "endpoint")
+        }
+        if current != comparable:
+            raise RedmineAccessError("附件元数据已发生变化，原确认失效")
+        validate_download_destination(Path(str(expected.get("destination", ""))))
 
 
 def validate_pending_semantics(
@@ -1007,7 +1339,7 @@ def validate_pending_semantics(
     operation = pending.get("operation")
     action = pending.get("action")
     target = pending.get("target")
-    if operation not in WRITE_OPERATIONS or not isinstance(action, dict) or not isinstance(target, dict):
+    if operation not in CONFIRM_OPERATIONS or not isinstance(action, dict) or not isinstance(target, dict):
         raise RedmineAccessError("待确认操作的语义类型无效")
     require_operation(policy, operation)
     if operation == "issue.create":
@@ -1116,7 +1448,7 @@ def validate_pending_semantics(
             or set(attachment) != {"path", "filename", "size", "sha256", "description"}
             or not isinstance(attachment.get("path"), str)
             or not isinstance(attachment.get("filename"), str)
-            or not isinstance(attachment.get("size"), int)
+            or type(attachment.get("size")) is not int
             or not 0 <= attachment["size"] <= policy.get("max_attachment_bytes", 10_000_000)
             or Path(attachment["path"]).name != attachment["filename"]
             or not re.fullmatch(r"[0-9a-f]{64}", str(attachment.get("sha256", "")))
@@ -1133,6 +1465,58 @@ def validate_pending_semantics(
         }
         if pending.get("preview") != compact_preview(expected_preview):
             raise RedmineAccessError("待确认预览与附件动作不匹配")
+        return
+    if operation == "attachment.download":
+        attachment = action.get("attachment")
+        issue_id = target.get("issue_id")
+        attachment_id = target.get("attachment_id")
+        expected_keys = {
+            "id",
+            "filename",
+            "size",
+            "content_type",
+            "created_on",
+            "endpoint",
+            "destination",
+        }
+        if (
+            set(action) != {"kind", "issue_id", "attachment"}
+            or action.get("kind") != "attachment_download"
+            or action.get("issue_id") != issue_id
+            or not isinstance(issue_id, int)
+            or issue_id <= 0
+            or not isinstance(attachment_id, int)
+            or attachment_id <= 0
+            or not isinstance(attachment, dict)
+            or set(attachment) != expected_keys
+            or attachment.get("id") != attachment_id
+            or not isinstance(attachment.get("size"), int)
+            or not 0 <= attachment["size"] <= policy.get(
+                "max_attachment_download_bytes", 10_000_000
+            )
+            or not isinstance(attachment.get("destination"), str)
+            or not isinstance(pending.get("before_updated_on"), str)
+        ):
+            raise RedmineAccessError("待确认的附件下载动作不符合内置语义")
+        filename = safe_attachment_filename(attachment.get("filename"))
+        expected_endpoint = (
+            f"/attachments/download/{attachment_id}/{quote(filename, safe='')}"
+        )
+        destination = Path(attachment["destination"])
+        if (
+            attachment.get("endpoint") != expected_endpoint
+            or destination.name != f"{attachment_id}-{filename}"
+        ):
+            raise RedmineAccessError("待确认的附件下载路径不符合内置语义")
+        validate_download_destination(destination)
+        reject_api_key_content(attachment, profile, "待确认附件下载信息")
+        expected_preview = {
+            "download": {
+                key: value for key, value in attachment.items() if key != "endpoint"
+            }
+        }
+        if pending.get("preview") != compact_preview(expected_preview):
+            raise RedmineAccessError("待确认预览与附件下载动作不匹配")
         return
     raise RedmineAccessError("待确认操作没有内置语义验证器")
 
@@ -1266,7 +1650,7 @@ def apply_pending(approval_id: str, confirmation: str) -> dict[str, Any]:
         raise RedmineAccessError("权限策略已变化，原确认失效")
     operation = pending["operation"]
     require_operation(policy, operation)
-    require_write_project(policy, pending["project_identifier"])
+    require_operation_project(policy, operation, pending["project_identifier"])
     validate_pending_semantics(pending, profile, policy)
     api = RedmineHTTP(profile)
     _verify_pending_current(api, pending)
@@ -1349,6 +1733,24 @@ def apply_pending(approval_id: str, confirmation: str) -> dict[str, Any]:
                 "issue_update_status": update_status,
                 "verified": True,
             }
+        elif action.get("kind") == "attachment_download":
+            attachment = action["attachment"]
+            result = api.download(
+                attachment["endpoint"],
+                Path(attachment["destination"]),
+                expected_size=attachment["size"],
+                maximum_size=policy.get(
+                    "max_attachment_download_bytes", 10_000_000
+                ),
+            )
+            result.update(
+                {
+                    "attachment_id": attachment["id"],
+                    "filename": attachment["filename"],
+                    "content_type": attachment.get("content_type"),
+                    "verified": True,
+                }
+            )
         else:
             raise RedmineAccessError("待确认操作包含未知动作")
         audit_written = try_append_audit(pending, "success")
@@ -1376,6 +1778,9 @@ def command_status(profile_name: str | None) -> dict[str, Any]:
         "profile": selected,
         "server_url": validate_server_url(profile["server_url"]),
         "write_projects": policy.get("write_projects", []),
+        "attachment_download_projects": policy.get(
+            "attachment_download_projects", []
+        ),
         "operations": policy.get("operations", {}),
     }, [profile["api_key"]])
 
@@ -1578,6 +1983,14 @@ def build_parser() -> argparse.ArgumentParser:
     attachment.add_argument("path")
     attachment.add_argument("--description")
 
+    download = subparsers.add_parser(
+        "prepare-download-attachment",
+        help="准备下载单个 Issue 附件，暂不创建文件",
+    )
+    download.add_argument("issue_id", type=positive_issue_id)
+    download.add_argument("attachment_id", type=positive_issue_id)
+    download.add_argument("--output-dir")
+
     apply = subparsers.add_parser("apply", help="执行已被用户明确确认的一次性变更")
     apply.add_argument("approval_id")
     apply.add_argument("--confirm", required=True)
@@ -1604,7 +2017,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         if args.command.startswith("prepare-") and not args.profile:
-            raise RedmineAccessError("准备写操作必须通过 --profile 显式选择 profile")
+            raise RedmineAccessError("准备确认操作必须通过 --profile 显式选择 profile")
         profile_name, profile, policy = load_context(args.profile)
         output_secrets = [profile["api_key"]]
         api = RedmineHTTP(profile)
@@ -1631,6 +2044,16 @@ def main(argv: list[str] | None = None) -> int:
             value = prepare_time_entry(api, profile_name, profile, policy, load_payload(args.payload_file))
         elif args.command == "prepare-attachment":
             value = prepare_attachment(api, profile_name, profile, policy, args.issue_id, args.path, args.description)
+        elif args.command == "prepare-download-attachment":
+            value = prepare_attachment_download(
+                api,
+                profile_name,
+                profile,
+                policy,
+                args.issue_id,
+                args.attachment_id,
+                args.output_dir,
+            )
         else:
             raise RedmineAccessError(f"未知命令：{args.command}")
         print_json(value, args.pretty, output_secrets)

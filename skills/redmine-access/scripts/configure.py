@@ -13,12 +13,13 @@ from typing import Any
 import redmine_client as client
 
 
-NORMAL_WRITES = [
+NORMAL_CONFIRM_OPERATIONS = [
     "issue.create",
     "issue.update",
     "issue.comment",
     "time_entry.create",
     "attachment.upload",
+    "attachment.download",
 ]
 
 
@@ -75,6 +76,7 @@ def choose_projects(
     projects: list[dict[str, Any]],
     current: list[str] | None = None,
     secret: str | None = None,
+    label: str = "允许写入的项目 identifier（逗号分隔；none 表示无）",
 ) -> list[str]:
     identifiers = {
         item["identifier"]: item.get("name", item["identifier"])
@@ -86,7 +88,7 @@ def choose_projects(
         display = client.redact_secrets(f"  {identifier}: {name}", [secret] if secret else [])
         print(display)
     default = ",".join(current or [])
-    raw = prompt("允许写入的项目 identifier（逗号分隔；none 表示只读）", default or "none")
+    raw = prompt(label, default or "none")
     selected = [] if raw.lower() == "none" else [item.strip() for item in raw.split(",") if item.strip()]
     unknown = sorted(set(selected) - set(identifiers))
     if unknown:
@@ -94,23 +96,30 @@ def choose_projects(
     return list(dict.fromkeys(selected))
 
 
-def choose_write_operations(current: dict[str, str] | None = None) -> dict[str, str]:
-    current_enabled = [name for name in NORMAL_WRITES if (current or {}).get(name) == "confirm"]
-    default_enabled = current_enabled if current is not None else NORMAL_WRITES
+def choose_confirm_operations(current: dict[str, str] | None = None) -> dict[str, str]:
+    current_enabled = [
+        name
+        for name in NORMAL_CONFIRM_OPERATIONS
+        if (current or {}).get(name) == "confirm"
+    ]
+    default_enabled = current_enabled if current is not None else NORMAL_CONFIRM_OPERATIONS
     default = ",".join(default_enabled) or "none"
-    print("可启用的写操作：" + ", ".join(NORMAL_WRITES))
-    raw = prompt("逐次确认后允许的写操作（逗号分隔；none 表示全部拒绝）", default)
+    print("可启用的确认操作：" + ", ".join(NORMAL_CONFIRM_OPERATIONS))
+    raw = prompt("逐次确认后允许的操作（逗号分隔；none 表示全部拒绝）", default)
     enabled = set() if raw.lower() == "none" else {item.strip() for item in raw.split(",") if item.strip()}
-    unknown = sorted(enabled - set(NORMAL_WRITES))
+    unknown = sorted(enabled - set(NORMAL_CONFIRM_OPERATIONS))
     if unknown:
-        raise client.RedmineAccessError(f"未知写操作：{unknown}")
+        raise client.RedmineAccessError(f"未知确认操作：{unknown}")
     operations = {
         "issue.read": "allow",
         "project.read": "allow",
         "user.read": "allow",
         "metadata.read": "allow",
         "time_entry.read": "allow",
-        **{name: ("confirm" if name in enabled else "deny") for name in NORMAL_WRITES},
+        **{
+            name: ("confirm" if name in enabled else "deny")
+            for name in NORMAL_CONFIRM_OPERATIONS
+        },
         "issue.private_comment": "deny",
         **{name: "deny" for name in sorted(client.DELETE_OPERATIONS)},
     }
@@ -144,10 +153,28 @@ def choose_custom_field_ids(current: list[int]) -> list[int]:
     return list(dict.fromkeys(selected))
 
 
-def default_policy(write_projects: list[str], operations: dict[str, str]) -> dict[str, Any]:
+def choose_integer_limit(label: str, current: int, minimum: int, maximum: int) -> int:
+    raw = prompt(label, str(current))
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise client.RedmineAccessError(f"{label} 必须是整数") from exc
+    if not minimum <= value <= maximum:
+        raise client.RedmineAccessError(
+            f"{label} 必须在 {minimum} 到 {maximum} 之间"
+        )
+    return value
+
+
+def default_policy(
+    write_projects: list[str],
+    download_projects: list[str],
+    operations: dict[str, str],
+) -> dict[str, Any]:
     return {
         "operations": operations,
         "write_projects": write_projects,
+        "attachment_download_projects": download_projects,
         "issue_create_fields": [
             "project_id",
             "subject",
@@ -171,6 +198,7 @@ def default_policy(write_projects: list[str], operations: dict[str, str]) -> dic
         "max_mutations_per_confirmation": 1,
         "pending_ttl_seconds": 600,
         "max_attachment_bytes": 10_000_000,
+        "max_attachment_download_bytes": 10_000_000,
         "max_time_entry_hours": 24,
     }
 
@@ -208,9 +236,19 @@ def setup(profile_name: str) -> dict[str, Any]:
     show_identity(api)
     projects = fetch_projects(api)
     current_policy = permissions.get("profiles", {}).get(profile_name, {})
-    write_projects = choose_projects(projects, current_policy.get("write_projects"), api.api_key)
-    operations = choose_write_operations(current_policy.get("operations"))
-    policy = default_policy(write_projects, operations)
+    write_projects = choose_projects(
+        projects,
+        current_policy.get("write_projects"),
+        api.api_key,
+    )
+    download_projects = choose_projects(
+        projects,
+        current_policy.get("attachment_download_projects", write_projects),
+        api.api_key,
+        "允许下载附件的项目 identifier（逗号分隔；none 表示禁止下载）",
+    )
+    operations = choose_confirm_operations(current_policy.get("operations"))
+    policy = default_policy(write_projects, download_projects, operations)
     if client.contains_secret(policy, [api_key]):
         raise client.RedmineAccessError("权限配置包含 API Key，已拒绝保存")
     config.setdefault("profiles", {})[profile_name] = profile
@@ -226,7 +264,12 @@ def setup(profile_name: str) -> dict[str, Any]:
         "profile": profile_name,
         "server_url": server_url,
         "write_projects": write_projects,
-        "writes": {name: mode for name, mode in operations.items() if name in client.WRITE_OPERATIONS},
+        "attachment_download_projects": download_projects,
+        "confirmed_operations": {
+            name: mode
+            for name, mode in operations.items()
+            if name in client.CONFIRM_OPERATIONS
+        },
         "config_dir": str(client.CONFIG_ROOT),
     }
 
@@ -237,10 +280,21 @@ def update_permissions(profile_name: str) -> dict[str, Any]:
     api = client.RedmineHTTP(profile)
     show_identity(api)
     projects = fetch_projects(api)
-    write_projects = choose_projects(projects, current.get("write_projects"), api.api_key)
-    operations = choose_write_operations(current.get("operations"))
+    write_projects = choose_projects(
+        projects,
+        current.get("write_projects"),
+        api.api_key,
+    )
+    download_projects = choose_projects(
+        projects,
+        current.get("attachment_download_projects", []),
+        api.api_key,
+        "允许下载附件的项目 identifier（逗号分隔；none 表示禁止下载）",
+    )
+    operations = choose_confirm_operations(current.get("operations"))
     updated = dict(current)
     updated["write_projects"] = write_projects
+    updated["attachment_download_projects"] = download_projects
     updated["operations"] = operations
     updated["issue_create_fields"] = choose_fields(
         "允许创建 Issue 的字段",
@@ -254,6 +308,12 @@ def update_permissions(profile_name: str) -> dict[str, Any]:
         current.get("issue_update_fields", []),
     )
     updated["custom_field_ids"] = choose_custom_field_ids(current.get("custom_field_ids", []))
+    updated["max_attachment_download_bytes"] = choose_integer_limit(
+        "单个附件最大下载字节数",
+        current.get("max_attachment_download_bytes", 10_000_000),
+        1,
+        500_000_000,
+    )
     if client.contains_secret(updated, [profile["api_key"]]):
         raise client.RedmineAccessError("权限配置包含 API Key，已拒绝保存")
     document = client.read_secure_json(client.PERMISSIONS_FILE)
@@ -264,6 +324,7 @@ def update_permissions(profile_name: str) -> dict[str, Any]:
         "updated": True,
         "profile": selected,
         "write_projects": write_projects,
+        "attachment_download_projects": download_projects,
         "operations": operations,
     }
 
@@ -273,7 +334,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     setup_parser = subparsers.add_parser("setup", help="新增或重新配置 profile")
     setup_parser.add_argument("--profile", default="default")
-    permission_parser = subparsers.add_parser("permissions", help="调整已有 profile 的本地写权限")
+    permission_parser = subparsers.add_parser("permissions", help="调整已有 profile 的本地权限")
     permission_parser.add_argument("--profile", required=True)
     show_parser = subparsers.add_parser("show", help="显示脱敏后的配置状态")
     show_parser.add_argument("--profile")

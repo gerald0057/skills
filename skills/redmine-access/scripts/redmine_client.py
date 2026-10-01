@@ -77,6 +77,7 @@ READ_OPERATIONS = {
 WRITE_OPERATIONS = {
     "issue.create",
     "issue.update",
+    "issue.publish",
     "issue.comment",
     "issue.private_comment",
     "time_entry.create",
@@ -369,13 +370,21 @@ def validate_permissions(document: dict[str, Any]) -> None:
         ):
             raise RedmineAccessError(f"profile {name} 的 custom_field_ids 无效")
         if policy.get("max_mutations_per_confirmation", 1) != 1:
-            raise RedmineAccessError("V1 仅允许每次确认执行一个变更")
+            raise RedmineAccessError("每次确认只能绑定一个语义操作或一个操作包")
         ttl = policy.get("pending_ttl_seconds", 600)
         if not isinstance(ttl, int) or not 60 <= ttl <= 3600:
             raise RedmineAccessError("pending_ttl_seconds 必须在 60 到 3600 之间")
         maximum = policy.get("max_attachment_bytes", 10_000_000)
         if not isinstance(maximum, int) or not 1 <= maximum <= 100_000_000:
             raise RedmineAccessError("max_attachment_bytes 必须在 1 到 100000000 之间")
+        publish_count = policy.get("max_publish_attachments", 10)
+        if not isinstance(publish_count, int) or not 1 <= publish_count <= 10:
+            raise RedmineAccessError("max_publish_attachments 必须在 1 到 10 之间")
+        publish_total = policy.get("max_publish_total_bytes", 50_000_000)
+        if not isinstance(publish_total, int) or not 1 <= publish_total <= 500_000_000:
+            raise RedmineAccessError(
+                "max_publish_total_bytes 必须在 1 到 500000000 之间"
+            )
         download_maximum = policy.get("max_attachment_download_bytes", 10_000_000)
         if not isinstance(download_maximum, int) or not 1 <= download_maximum <= 500_000_000:
             raise RedmineAccessError(
@@ -1196,6 +1205,50 @@ def file_contains(path: Path, needle: bytes) -> bool:
     return False
 
 
+def prepare_upload_file(
+    source: str,
+    description: str | None,
+    profile: dict[str, Any],
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    raw_path = Path(source).expanduser()
+    if raw_path.is_symlink():
+        raise RedmineAccessError("附件路径不能是符号链接")
+    reject_api_key_content(
+        {"path": str(raw_path), "description": description}, profile, "附件信息"
+    )
+    path = raw_path.resolve(strict=True)
+    if not path.is_file():
+        raise RedmineAccessError("附件必须是普通文件")
+    filename = safe_attachment_filename(path.name)
+    size = path.stat().st_size
+    if size > policy.get("max_attachment_bytes", 10_000_000):
+        raise RedmineAccessError("附件超过本地权限策略的大小限制")
+    if file_contains(path, profile["api_key"].encode("utf-8")):
+        raise RedmineAccessError("附件内容包含当前 profile 的 API Key，已拒绝上传")
+    return {
+        "path": str(path),
+        "filename": filename,
+        "size": size,
+        "sha256": file_digest(path),
+        "description": description,
+    }
+
+
+def publish_preview(action: dict[str, Any]) -> dict[str, Any]:
+    attachments = action["attachments"]
+    return {
+        "publish": {
+            "issue_id": action["issue_id"],
+            "attachments": attachments,
+            "attachment_count": len(attachments),
+            "total_bytes": sum(item["size"] for item in attachments),
+            "update": action["update"],
+            "execution": "serial uploads followed by one issue update",
+        }
+    }
+
+
 def prepare_attachment(
     api: RedmineHTTP,
     profile_name: str,
@@ -1206,27 +1259,9 @@ def prepare_attachment(
     description: str | None,
 ) -> dict[str, Any]:
     require_operation(policy, "attachment.upload")
-    raw_path = Path(source).expanduser()
-    if raw_path.is_symlink():
-        raise RedmineAccessError("附件路径不能是符号链接")
-    reject_api_key_content({"path": str(raw_path), "description": description}, profile, "附件信息")
-    path = raw_path.resolve(strict=True)
-    if not path.is_file():
-        raise RedmineAccessError("附件必须是普通文件")
-    size = path.stat().st_size
-    if size > policy.get("max_attachment_bytes", 10_000_000):
-        raise RedmineAccessError("附件超过本地权限策略的大小限制")
-    if file_contains(path, profile["api_key"].encode("utf-8")):
-        raise RedmineAccessError("附件内容包含当前 profile 的 API Key，已拒绝上传")
+    attachment = prepare_upload_file(source, description, profile, policy)
     issue = get_issue(api, issue_id)
     project = issue_project(api, issue)
-    attachment = {
-        "path": str(path),
-        "filename": path.name,
-        "size": size,
-        "sha256": file_digest(path),
-        "description": description,
-    }
     return create_pending(
         profile_name=profile_name,
         profile=profile,
@@ -1236,6 +1271,70 @@ def prepare_attachment(
         target={"issue_id": issue_id, "subject": issue.get("subject")},
         action={"kind": "attachment", "issue_id": issue_id, "attachment": attachment},
         preview={"attachment": {key: value for key, value in attachment.items() if key != "path"}},
+        before_updated_on=issue.get("updated_on"),
+    )
+
+
+def prepare_publish(
+    api: RedmineHTTP,
+    profile_name: str,
+    profile: dict[str, Any],
+    policy: dict[str, Any],
+    issue_id: int,
+    sources: list[str],
+    description: str | None,
+) -> dict[str, Any]:
+    require_operation(policy, "issue.publish")
+    maximum_count = policy.get("max_publish_attachments", 10)
+    if not sources:
+        raise RedmineAccessError("发布操作至少需要一个附件")
+    if len(sources) > maximum_count:
+        raise RedmineAccessError("附件数量超过单次发布权限上限")
+    if description is not None:
+        if "description" not in policy.get("issue_update_fields", []):
+            raise RedmineAccessError("权限策略未允许发布操作更新 description")
+        reject_api_key_content(description, profile, "发布 description")
+
+    attachments = [
+        prepare_upload_file(source, None, profile, policy) for source in sources
+    ]
+    paths = [item["path"] for item in attachments]
+    filenames = [item["filename"] for item in attachments]
+    if len(set(paths)) != len(paths):
+        raise RedmineAccessError("发布操作不能重复上传同一个文件")
+    if len(set(filenames)) != len(filenames):
+        raise RedmineAccessError("发布操作中的附件文件名必须唯一")
+    total_bytes = sum(item["size"] for item in attachments)
+    if total_bytes > policy.get("max_publish_total_bytes", 50_000_000):
+        raise RedmineAccessError("附件总大小超过单次发布权限上限")
+
+    issue = get_issue(api, issue_id, ["attachments"])
+    existing_names = {
+        item.get("filename")
+        for item in issue.get("attachments", [])
+        if isinstance(item, dict) and isinstance(item.get("filename"), str)
+    }
+    duplicates = sorted(set(filenames) & existing_names)
+    if duplicates:
+        raise RedmineAccessError(
+            f"Issue 已存在同名附件，无法可靠验证发布结果：{duplicates}"
+        )
+    project = issue_project(api, issue)
+    action = {
+        "kind": "issue_publish",
+        "issue_id": issue_id,
+        "attachments": attachments,
+        "update": {"description": description} if description is not None else {},
+    }
+    return create_pending(
+        profile_name=profile_name,
+        profile=profile,
+        policy=policy,
+        operation="issue.publish",
+        project_identifier=project["identifier"],
+        target={"issue_id": issue_id, "subject": issue.get("subject")},
+        action=action,
+        preview=publish_preview(action),
         before_updated_on=issue.get("updated_on"),
     )
 
@@ -1395,6 +1494,61 @@ def validate_pending_semantics(
             ):
                 raise RedmineAccessError("待确认预览与评论动作不匹配")
         reject_api_key_content(body, profile, "待确认 Issue payload")
+        return
+    if operation == "issue.publish":
+        issue_id = target.get("issue_id")
+        attachments = action.get("attachments")
+        update = action.get("update")
+        if (
+            set(action) != {"kind", "issue_id", "attachments", "update"}
+            or action.get("kind") != "issue_publish"
+            or action.get("issue_id") != issue_id
+            or not isinstance(issue_id, int)
+            or issue_id <= 0
+            or not isinstance(attachments, list)
+            or not 1 <= len(attachments) <= policy.get("max_publish_attachments", 10)
+            or not isinstance(update, dict)
+            or set(update) - {"description"}
+            or not isinstance(pending.get("before_updated_on"), str)
+        ):
+            raise RedmineAccessError("待确认的 Issue 发布动作不符合内置语义")
+        if "description" in update and (
+            "description" not in policy.get("issue_update_fields", [])
+            or not isinstance(update["description"], str)
+        ):
+            raise RedmineAccessError("待确认发布的 description 超出字段权限")
+        paths: list[str] = []
+        filenames: list[str] = []
+        total_bytes = 0
+        for attachment in attachments:
+            if (
+                not isinstance(attachment, dict)
+                or set(attachment)
+                != {"path", "filename", "size", "sha256", "description"}
+                or not isinstance(attachment.get("path"), str)
+                or not isinstance(attachment.get("filename"), str)
+                or type(attachment.get("size")) is not int
+                or not 0 <= attachment["size"]
+                <= policy.get("max_attachment_bytes", 10_000_000)
+                or Path(attachment["path"]).name != attachment["filename"]
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}", str(attachment.get("sha256", ""))
+                )
+                or attachment.get("description") is not None
+                and not isinstance(attachment.get("description"), str)
+            ):
+                raise RedmineAccessError("待确认发布包含无效附件")
+            safe_attachment_filename(attachment["filename"])
+            paths.append(attachment["path"])
+            filenames.append(attachment["filename"])
+            total_bytes += attachment["size"]
+        if len(set(paths)) != len(paths) or len(set(filenames)) != len(filenames):
+            raise RedmineAccessError("待确认发布包含重复附件")
+        if total_bytes > policy.get("max_publish_total_bytes", 50_000_000):
+            raise RedmineAccessError("待确认发布的附件总大小超出权限")
+        reject_api_key_content(action, profile, "待确认 Issue 发布信息")
+        if pending.get("preview") != compact_preview(publish_preview(action)):
+            raise RedmineAccessError("待确认预览与 Issue 发布动作不匹配")
         return
     if operation == "time_entry.create":
         entry = action.get("body", {}).get("time_entry") if isinstance(action.get("body"), dict) else None
@@ -1639,6 +1793,107 @@ def _verify_json_write(
     raise RedmineAccessError(f"缺少 {operation} 的写后验证器")
 
 
+def verified_attachment_bytes(attachment: dict[str, Any]) -> bytes:
+    source = Path(attachment["path"])
+    if source.is_symlink() or not source.is_file():
+        raise RedmineAccessError("附件文件不存在或不再是安全的普通文件")
+    try:
+        if source.resolve(strict=True) != source:
+            raise RedmineAccessError("附件规范路径已变化，原确认失效")
+        content = source.read_bytes()
+    except OSError as exc:
+        raise RedmineAccessError(f"无法读取附件：{exc}") from exc
+    if (
+        len(content) != attachment["size"]
+        or hashlib.sha256(content).hexdigest() != attachment["sha256"]
+    ):
+        raise RedmineAccessError("附件内容已变化，原确认失效")
+    return content
+
+
+def apply_issue_publish(
+    api: RedmineHTTP,
+    pending: dict[str, Any],
+) -> dict[str, Any]:
+    action = pending["action"]
+    issue_id = int(action["issue_id"])
+    uploaded: list[dict[str, Any]] = []
+    try:
+        for attachment in action["attachments"]:
+            content = verified_attachment_bytes(attachment)
+            upload_status, upload_response = api.request(
+                "POST",
+                "/uploads.json",
+                query={"filename": attachment["filename"]},
+                binary_body=content,
+            )
+            if upload_status != 201:
+                raise RequestOutcomeUnknown(
+                    f"附件上传返回非预期状态 {upload_status}；禁止自动重试"
+                )
+            token = (
+                upload_response.get("upload", {}).get("token")
+                if isinstance(upload_response, dict)
+                else None
+            )
+            if not isinstance(token, str) or not token:
+                raise RequestOutcomeUnknown("附件上传响应缺少 token；禁止自动重试")
+            item = {"token": token, "filename": attachment["filename"]}
+            if attachment.get("description"):
+                item["description"] = attachment["description"]
+            uploaded.append(item)
+
+        # Upload tokens do not intentionally mutate the Issue. Recheck immediately
+        # before the single association/update request to catch external changes.
+        _verify_pending_current(api, pending)
+        issue_body = dict(action["update"])
+        issue_body["uploads"] = uploaded
+        update_status, _ = api.request(
+            "PUT",
+            f"/issues/{issue_id}.json",
+            json_body={"issue": issue_body},
+        )
+        if update_status != 204:
+            raise RequestOutcomeUnknown(
+                f"Issue 发布返回非预期状态 {update_status}；禁止自动重试"
+            )
+
+        issue = get_issue(api, issue_id, ["attachments"])
+        if "description" in action["update"] and issue.get("description") != action["update"]["description"]:
+            raise RequestOutcomeUnknown(
+                "Issue 发布成功返回，但 description 写后验证不一致；禁止自动重试"
+            )
+        current_attachments = issue.get("attachments", [])
+        missing = [
+            attachment["filename"]
+            for attachment in action["attachments"]
+            if not any(
+                isinstance(item, dict)
+                and item.get("filename") == attachment["filename"]
+                and item.get("filesize") == attachment["size"]
+                for item in current_attachments
+            )
+        ]
+        if missing:
+            raise RequestOutcomeUnknown(
+                f"Issue 发布成功返回，但写后未找到 {len(missing)} 个附件；禁止自动重试"
+            )
+        return {
+            "upload_count": len(uploaded),
+            "issue_update_status": update_status,
+            "updated_fields": sorted(action["update"]),
+            "verified": True,
+        }
+    except RequestOutcomeUnknown:
+        raise
+    except RedmineAccessError as exc:
+        if uploaded:
+            raise RequestOutcomeUnknown(
+                f"已取得 {len(uploaded)} 个上传 token，但发布未完成；禁止自动重试，请读取 Issue 核对"
+            ) from exc
+        raise
+
+
 def apply_pending(approval_id: str, confirmation: str) -> dict[str, Any]:
     if not secrets.compare_digest(approval_id, confirmation):
         raise RedmineAccessError("--confirm 必须与操作编号完全一致")
@@ -1676,18 +1931,18 @@ def apply_pending(approval_id: str, confirmation: str) -> dict[str, Any]:
                     "写请求已成功返回，但写后读取验证失败；禁止自动重试"
                 ) from exc
             result = {"status": status, "verification": verification}
+        elif action.get("kind") == "issue_publish":
+            result = apply_issue_publish(api, pending)
         elif action.get("kind") == "attachment":
             attachment = action["attachment"]
-            source = Path(attachment["path"])
-            if not source.is_file() or source.stat().st_size != attachment["size"] or file_digest(source) != attachment["sha256"]:
-                raise RedmineAccessError("附件内容已变化，原确认失效")
+            content = verified_attachment_bytes(attachment)
             upload_started = False
             try:
                 upload_status, upload_response = api.request(
                     "POST",
                     "/uploads.json",
                     query={"filename": attachment["filename"]},
-                    binary_body=source.read_bytes(),
+                    binary_body=content,
                 )
                 upload_started = True
                 if upload_status != 201:
@@ -1781,7 +2036,14 @@ def command_status(profile_name: str | None) -> dict[str, Any]:
         "attachment_download_projects": policy.get(
             "attachment_download_projects", []
         ),
-        "operations": policy.get("operations", {}),
+        "publish_limits": {
+            "max_attachments": policy.get("max_publish_attachments", 10),
+            "max_total_bytes": policy.get("max_publish_total_bytes", 50_000_000),
+        },
+        "operations": {
+            operation: policy.get("operations", {}).get(operation, "deny")
+            for operation in sorted(ALLOWED_OPERATIONS)
+        },
     }, [profile["api_key"]])
 
 
@@ -1983,6 +2245,23 @@ def build_parser() -> argparse.ArgumentParser:
     attachment.add_argument("path")
     attachment.add_argument("--description")
 
+    publish = subparsers.add_parser(
+        "prepare-publish",
+        help="准备向同一 Issue 发布多个附件并可同时更新 description",
+    )
+    publish.add_argument("issue_id", type=positive_issue_id)
+    publish.add_argument(
+        "--attachment",
+        action="append",
+        required=True,
+        dest="attachments",
+        help="待上传文件路径；可重复，按参数顺序串行上传",
+    )
+    publish.add_argument(
+        "--description-file",
+        help="可选 UTF-8 文件；在最终一次 Issue 更新中替换 description",
+    )
+
     download = subparsers.add_parser(
         "prepare-download-attachment",
         help="准备下载单个 Issue 附件，暂不创建文件",
@@ -2044,6 +2323,21 @@ def main(argv: list[str] | None = None) -> int:
             value = prepare_time_entry(api, profile_name, profile, policy, load_payload(args.payload_file))
         elif args.command == "prepare-attachment":
             value = prepare_attachment(api, profile_name, profile, policy, args.issue_id, args.path, args.description)
+        elif args.command == "prepare-publish":
+            description = (
+                load_text(args.description_file)
+                if args.description_file is not None
+                else None
+            )
+            value = prepare_publish(
+                api,
+                profile_name,
+                profile,
+                policy,
+                args.issue_id,
+                args.attachments,
+                description,
+            )
         elif args.command == "prepare-download-attachment":
             value = prepare_attachment_download(
                 api,

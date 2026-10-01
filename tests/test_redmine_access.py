@@ -42,6 +42,7 @@ def sample_policy() -> dict:
         "time_entry.read": "allow",
         "issue.create": "confirm",
         "issue.update": "confirm",
+        "issue.publish": "confirm",
         "issue.comment": "confirm",
         "issue.private_comment": "deny",
         "time_entry.create": "confirm",
@@ -59,6 +60,8 @@ def sample_policy() -> dict:
         "max_mutations_per_confirmation": 1,
         "pending_ttl_seconds": 600,
         "max_attachment_bytes": 1_000_000,
+        "max_publish_attachments": 10,
+        "max_publish_total_bytes": 5_000_000,
         "max_attachment_download_bytes": 1_000_000,
         "max_time_entry_hours": 12,
     }
@@ -154,6 +157,72 @@ class FakeRedmine:
             "bytes": len(content),
             "sha256": client.hashlib.sha256(content).hexdigest(),
         }
+
+
+class PublishFakeRedmine(FakeRedmine):
+    def __init__(
+        self,
+        *,
+        fail_upload_at: int | None = None,
+        change_during_uploads: bool = False,
+    ) -> None:
+        super().__init__()
+        self.fail_upload_at = fail_upload_at
+        self.change_during_uploads = change_during_uploads
+        self.upload_attempts = 0
+        self.issue_reads = 0
+        self.write_trace: list[str] = []
+        self.uploaded_by_token: dict[str, tuple[str, int]] = {}
+
+    def request(
+        self,
+        method,
+        endpoint,
+        *,
+        query=None,
+        json_body=None,
+        binary_body=None,
+        content_type=None,
+    ):
+        if method == "GET" and endpoint == "/issues/42.json":
+            self.issue_reads += 1
+            if self.change_during_uploads and self.upload_attempts and self.issue_reads >= 3:
+                self.issue["updated_on"] = "2026-08-20T02:00:00Z"
+            return 200, {"issue": json.loads(json.dumps(self.issue))}
+        if method == "POST" and endpoint == "/uploads.json":
+            self.upload_attempts += 1
+            self.write_trace.append(f"upload:{query['filename']}")
+            if self.fail_upload_at == self.upload_attempts:
+                raise client.RedmineAccessError("Redmine HTTP 422: rejected")
+            token = f"token-{self.upload_attempts}"
+            self.uploaded_by_token[token] = (query["filename"], len(binary_body))
+            return 201, {"upload": {"token": token}}
+        if method == "PUT" and endpoint == "/issues/42.json":
+            self.write_count += 1
+            self.write_trace.append("issue-update")
+            fields = json_body["issue"]
+            if "description" in fields:
+                self.issue["description"] = fields["description"]
+            for upload in fields.get("uploads", []):
+                filename, size = self.uploaded_by_token[upload["token"]]
+                self.issue.setdefault("attachments", []).append(
+                    {
+                        "id": 100 + len(self.issue["attachments"]),
+                        "filename": filename,
+                        "filesize": size,
+                        "content_type": "application/octet-stream",
+                    }
+                )
+            self.issue["updated_on"] = "2026-08-20T01:01:00Z"
+            return 204, None
+        return super().request(
+            method,
+            endpoint,
+            query=query,
+            json_body=json_body,
+            binary_body=binary_body,
+            content_type=content_type,
+        )
 
 
 class BinaryResponse:
@@ -344,13 +413,18 @@ class RedmineAccessTests(unittest.TestCase):
     def test_legacy_policy_stays_valid_but_download_defaults_to_deny(self):
         policy = sample_policy()
         policy["operations"].pop("attachment.download")
+        policy["operations"].pop("issue.publish")
         policy.pop("attachment_download_projects")
         policy.pop("max_attachment_download_bytes")
+        policy.pop("max_publish_attachments")
+        policy.pop("max_publish_total_bytes")
         client.validate_permissions(
             {"version": 1, "profiles": {"writer": policy}}
         )
         with self.assertRaisesRegex(client.RedmineAccessError, "当前：deny"):
             client.require_operation(policy, "attachment.download")
+        with self.assertRaisesRegex(client.RedmineAccessError, "当前：deny"):
+            client.require_operation(policy, "issue.publish")
 
     def test_successful_attachment_download_is_confirmed_private_and_single_use(self):
         with isolated_runtime():
@@ -500,6 +574,197 @@ class RedmineAccessTests(unittest.TestCase):
                         maximum_size=100,
                     )
             self.assertFalse(destination.exists())
+
+    def test_issue_publish_uses_one_confirmation_and_one_issue_update(self):
+        with isolated_runtime() as root:
+            write_context()
+            run_image = root / "run.png"
+            stop_image = root / "stop.png"
+            run_image.write_bytes(b"run-image")
+            stop_image.write_bytes(b"stop-image")
+            fake = PublishFakeRedmine()
+            prepared = client.prepare_publish(
+                fake,
+                "writer",
+                sample_profile(),
+                sample_policy(),
+                42,
+                [str(run_image), str(stop_image)],
+                "h2. Updated diagrams",
+            )
+            self.assertEqual(prepared["operation"], "issue.publish")
+            self.assertEqual(prepared["preview"]["publish"]["attachment_count"], 2)
+            self.assertEqual(
+                prepared["preview"]["publish"]["attachments"][0]["path"],
+                str(run_image),
+            )
+            approval_id = prepared["approval_id"]
+            with mock.patch.object(client, "RedmineHTTP", return_value=fake):
+                result = client.apply_pending(approval_id, approval_id)
+            self.assertEqual(
+                fake.write_trace,
+                ["upload:run.png", "upload:stop.png", "issue-update"],
+            )
+            self.assertEqual(fake.write_count, 1)
+            self.assertEqual(result["result"]["upload_count"], 2)
+            self.assertTrue(result["result"]["verified"])
+            self.assertEqual(fake.issue["description"], "h2. Updated diagrams")
+            with self.assertRaises(client.RedmineAccessError):
+                client.load_pending(approval_id)
+
+    def test_issue_publish_changed_file_stops_before_upload(self):
+        with isolated_runtime() as root:
+            write_context()
+            first = root / "first.png"
+            second = root / "second.png"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            fake = PublishFakeRedmine()
+            prepared = client.prepare_publish(
+                fake,
+                "writer",
+                sample_profile(),
+                sample_policy(),
+                42,
+                [str(first), str(second)],
+                None,
+            )
+            first.write_bytes(b"changed")
+            approval_id = prepared["approval_id"]
+            with mock.patch.object(client, "RedmineHTTP", return_value=fake):
+                with self.assertRaisesRegex(client.RedmineAccessError, "内容已变化"):
+                    client.apply_pending(approval_id, approval_id)
+            self.assertEqual(fake.write_trace, [])
+
+    def test_issue_publish_stale_issue_stops_before_upload(self):
+        with isolated_runtime() as root:
+            write_context()
+            attachment = root / "diagram.png"
+            attachment.write_bytes(b"diagram")
+            fake = PublishFakeRedmine()
+            prepared = client.prepare_publish(
+                fake,
+                "writer",
+                sample_profile(),
+                sample_policy(),
+                42,
+                [str(attachment)],
+                None,
+            )
+            fake.issue["updated_on"] = "2026-08-20T02:00:00Z"
+            approval_id = prepared["approval_id"]
+            with mock.patch.object(client, "RedmineHTTP", return_value=fake):
+                with self.assertRaisesRegex(client.RedmineAccessError, "已发生变化"):
+                    client.apply_pending(approval_id, approval_id)
+            self.assertEqual(fake.write_trace, [])
+
+    def test_issue_publish_partial_upload_is_indeterminate_without_issue_update(self):
+        with isolated_runtime() as root:
+            write_context()
+            first = root / "first.png"
+            second = root / "second.png"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            fake = PublishFakeRedmine(fail_upload_at=2)
+            prepared = client.prepare_publish(
+                fake,
+                "writer",
+                sample_profile(),
+                sample_policy(),
+                42,
+                [str(first), str(second)],
+                None,
+            )
+            approval_id = prepared["approval_id"]
+            with mock.patch.object(client, "RedmineHTTP", return_value=fake):
+                with self.assertRaisesRegex(
+                    client.RequestOutcomeUnknown, "1 个上传 token"
+                ):
+                    client.apply_pending(approval_id, approval_id)
+            self.assertEqual(fake.write_trace, ["upload:first.png", "upload:second.png"])
+            self.assertEqual(fake.write_count, 0)
+            self.assertIn(
+                "indeterminate-no-automatic-retry", client.AUDIT_FILE.read_text()
+            )
+
+    def test_issue_publish_external_change_after_uploads_does_not_update_issue(self):
+        with isolated_runtime() as root:
+            write_context()
+            attachment = root / "diagram.png"
+            attachment.write_bytes(b"diagram")
+            fake = PublishFakeRedmine(change_during_uploads=True)
+            prepared = client.prepare_publish(
+                fake,
+                "writer",
+                sample_profile(),
+                sample_policy(),
+                42,
+                [str(attachment)],
+                None,
+            )
+            approval_id = prepared["approval_id"]
+            with mock.patch.object(client, "RedmineHTTP", return_value=fake):
+                with self.assertRaisesRegex(
+                    client.RequestOutcomeUnknown, "1 个上传 token"
+                ):
+                    client.apply_pending(approval_id, approval_id)
+            self.assertEqual(fake.write_trace, ["upload:diagram.png"])
+            self.assertEqual(fake.write_count, 0)
+
+    def test_issue_publish_permission_denial_happens_before_files_or_network(self):
+        policy = sample_policy()
+        policy["operations"]["issue.publish"] = "deny"
+        api = mock.Mock()
+        with self.assertRaisesRegex(client.RedmineAccessError, "issue.publish"):
+            client.prepare_publish(
+                api,
+                "writer",
+                sample_profile(),
+                policy,
+                42,
+                ["/missing/file.png"],
+                None,
+            )
+        api.request.assert_not_called()
+
+    def test_validly_signed_publish_cannot_expand_update_fields(self):
+        with isolated_runtime() as root:
+            write_context()
+            attachment = root / "diagram.png"
+            attachment.write_bytes(b"diagram")
+            action = {
+                "kind": "issue_publish",
+                "issue_id": 42,
+                "attachments": [
+                    {
+                        "path": str(attachment),
+                        "filename": "diagram.png",
+                        "size": 7,
+                        "sha256": client.file_digest(attachment),
+                        "description": None,
+                    }
+                ],
+                "update": {"status_id": 5},
+            }
+            prepared = client.create_pending(
+                profile_name="writer",
+                profile=sample_profile(),
+                policy=sample_policy(),
+                operation="issue.publish",
+                project_identifier="firmware",
+                target={"issue_id": 42, "subject": "Example"},
+                action=action,
+                preview=client.publish_preview(action),
+                before_updated_on="2026-08-20T01:00:00Z",
+            )
+            fake = PublishFakeRedmine()
+            approval_id = prepared["approval_id"]
+            with mock.patch.object(client, "RedmineHTTP", return_value=fake):
+                with self.assertRaisesRegex(
+                    client.RedmineAccessError, "内置语义"
+                ):
+                    client.apply_pending(approval_id, approval_id)
+            self.assertEqual(fake.write_trace, [])
 
     def test_validly_signed_pending_cannot_change_operation_semantics(self):
         with isolated_runtime():

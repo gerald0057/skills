@@ -11,6 +11,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_ROOT = ROOT / "skills"
+PLUGIN_NAME = "skills"
+MARKETPLACE_NAME = "gerald0057-skills"
 NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
@@ -96,8 +98,8 @@ def validate_manifests(errors: list[str]) -> None:
     claude = load_json(ROOT / ".claude-plugin" / "plugin.json", errors)
     marketplace = load_json(ROOT / ".claude-plugin" / "marketplace.json", errors)
 
-    if codex.get("name") != "smartrf-skills" or claude.get("name") != "smartrf-skills":
-        fail(errors, "Codex and Claude plugin names must both be smartrf-skills")
+    if codex.get("name") != PLUGIN_NAME or claude.get("name") != PLUGIN_NAME:
+        fail(errors, f"Codex and Claude plugin names must both be {PLUGIN_NAME}")
     if codex.get("version") != claude.get("version"):
         fail(errors, "Codex and Claude plugin versions must match")
     if codex.get("skills") != "./skills/" or claude.get("skills") != "./skills/":
@@ -105,14 +107,17 @@ def validate_manifests(errors: list[str]) -> None:
     if codex.get("license") != "MIT" or claude.get("license") != "MIT":
         fail(errors, "plugin manifests must declare the repository MIT license")
 
+    if marketplace.get("name") != MARKETPLACE_NAME:
+        fail(errors, f"marketplace name must be {MARKETPLACE_NAME}")
+
     plugins = marketplace.get("plugins")
     if not isinstance(plugins, list) or not any(
         isinstance(item, dict)
-        and item.get("name") == "smartrf-skills"
+        and item.get("name") == PLUGIN_NAME
         and item.get("source") == "./"
         for item in plugins
     ):
-        fail(errors, ".claude-plugin/marketplace.json must publish smartrf-skills from ./")
+        fail(errors, f".claude-plugin/marketplace.json must publish {PLUGIN_NAME} from ./")
 
 
 def main() -> int:

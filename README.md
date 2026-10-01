@@ -12,6 +12,7 @@
 | `smartrf-debugio` | 使用 gx-dsview-cli 采集并分析无线 DebugIO 时序 | [`skills/smartrf-debugio`](skills/smartrf-debugio/) |
 | `redmine-access` | 提供紧凑 Redmine 查询、逐次确认的附件下载与本地分析，以及安全写入 | [`skills/redmine-access`](skills/redmine-access/) |
 | `weekly-report` | 根据 iBrain 项目看板整理本周总结并合并下周计划 | [`skills/weekly-report`](skills/weekly-report/) |
+| `git-commit-guide` | 根据实际变更生成或检查规范的中文 Git 提交信息 | [`skills/git-commit-guide`](skills/git-commit-guide/) |
 
 `redmine-access` 首次使用时通过本地交互式向导配置，API Key 保存在
 `~/.config/skills/redmine-access/`，不会写入本仓库。读取默认返回有限分页的摘要；附件下载和所有写入逐次确认，删除永久禁止。
@@ -293,11 +294,11 @@ gh skill install gerald0057/skills \
   --scope user
 ```
 
-仓库发布 tag 后，可以安装指定 tag 或 commit SHA。例如固定到 `v0.3.0`：
+仓库发布 tag 后，可以安装指定 tag 或 commit SHA。例如固定到 `v0.4.0`：
 
 ```bash
 gh skill install gerald0057/skills \
-  redmine-access@v0.3.0 \
+  redmine-access@v0.4.0 \
   --agent codex \
   --scope user
 ```
@@ -314,18 +315,18 @@ gh skill install gerald0057/skills \
 
 ```bash
 # GitHub
-git clone https://github.com/gerald0057/skills.git smartrf-skills
+git clone https://github.com/gerald0057/skills.git skills
 
 # 私有 GitLab（需要已配置 SSH key）
 git clone \
   ssh://git@218.75.120.100:9922/zhuhy0057/skills.git \
-  smartrf-skills
+  skills
 ```
 
 进入仓库并验证文件结构：
 
 ```bash
-cd smartrf-skills
+cd skills
 python3 scripts/validate-repository.py
 ```
 
@@ -418,13 +419,13 @@ $smartrf-diagnostics 请说明分析 srf_debug -a 的检查顺序，不要执行
 ## Claude Code 插件安装（可选）
 
 除了 standalone skill，仓库还提供 Claude Code marketplace，可以一次安装整个
-`smartrf-skills` 插件。
+`skills` 插件。
 
 从 GitHub 安装：
 
 ```bash
 claude plugin marketplace add gerald0057/skills
-claude plugin install smartrf-skills@gerald0057-skills
+claude plugin install skills@gerald0057-skills
 ```
 
 从私有 GitLab 安装：
@@ -432,20 +433,20 @@ claude plugin install smartrf-skills@gerald0057-skills
 ```bash
 claude plugin marketplace add \
   ssh://git@218.75.120.100:9922/zhuhy0057/skills.git
-claude plugin install smartrf-skills@gerald0057-skills
+claude plugin install skills@gerald0057-skills
 ```
 
 验证插件和其中的 Skill：
 
 ```bash
 claude plugin list
-claude plugin details smartrf-skills@gerald0057-skills
+claude plugin details skills@gerald0057-skills
 ```
 
 插件 Skill 带有命名空间，例如：
 
 ```text
-/smartrf-skills:smartrf-diagnostics 请说明诊断流程。
+/skills:smartrf-diagnostics 请说明诊断流程。
 ```
 
 开发时也可以在仓库根目录直接加载，不创建安装记录：
@@ -455,6 +456,38 @@ claude --plugin-dir .
 ```
 
 ## 更新、重复安装与卸载
+
+### 从 `smartrf-skills` 迁移到 `skills`
+
+从 `0.4.0` 开始，整包插件机器名由 `smartrf-skills` 改为 `skills`。各个 Skill
+名称和 standalone 安装路径没有变化；只有通过 Codex 或 Claude Code marketplace
+安装整包插件的用户需要迁移。
+
+先更新本仓库或 marketplace，然后在仓库根目录预览迁移动作：
+
+```bash
+python3 scripts/migrate-plugin-name.py --agent all
+```
+
+确认输出后执行：
+
+```bash
+python3 scripts/migrate-plugin-name.py --agent all --apply
+```
+
+也可以只迁移一个客户端：
+
+```bash
+python3 scripts/migrate-plugin-name.py --agent codex --apply
+python3 scripts/migrate-plugin-name.py \
+  --agent claude-code \
+  --claude-scope user \
+  --apply
+```
+
+脚本只迁移已经安装的旧整包插件：先刷新 `gerald0057-skills` marketplace、安装并确认
+`skills@gerald0057-skills`，然后才卸载旧插件。新插件安装或验证失败时保留旧插件；重复
+运行是安全的。迁移后重新启动客户端或新建任务，使新命名空间生效。
 
 ### 从 0.1.x 迁移到 0.2.0
 
@@ -492,7 +525,7 @@ gh skill install gerald0057/skills \
 ### 本地复制安装
 
 ```bash
-cd /path/to/smartrf-skills
+cd /path/to/skills
 git pull
 gh skill install . \
   --from-local \
@@ -509,7 +542,7 @@ Claude Code 用户将 `--agent codex` 替换为 `--agent claude-code`。
 符号链接会直接读取仓库内容，只需更新仓库：
 
 ```bash
-cd /path/to/smartrf-skills
+cd /path/to/skills
 git pull
 ```
 
@@ -540,13 +573,13 @@ Codex 用户级默认路径为 `~/.agents/skills/<skill-name>`；Claude Code 用
 
 ```bash
 claude plugin marketplace update gerald0057-skills
-claude plugin update smartrf-skills@gerald0057-skills
+claude plugin update skills@gerald0057-skills
 ```
 
 仅卸载插件、保留 marketplace：
 
 ```bash
-claude plugin uninstall smartrf-skills@gerald0057-skills
+claude plugin uninstall skills@gerald0057-skills
 ```
 
 删除 marketplace，并同时卸载从中安装的插件：

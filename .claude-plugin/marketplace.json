@@ -8,7 +8,7 @@
   "description": "A curated source of independently usable agent skills",
   "plugins": [
     {
-      "name": "smartrf-skills",
+      "name": "skills",
       "source": "./",
       "description": "A curated collection of independently usable agent skills for engineering workflows",
       "category": "Developer Tools",

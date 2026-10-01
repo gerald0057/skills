@@ -12,6 +12,39 @@ INSTALLER = ROOT / "scripts" / "install-local.sh"
 
 
 class InstallLocalTests(unittest.TestCase):
+    def test_all_installs_every_current_skill_and_is_repeatable(self) -> None:
+        expected = {
+            path.parent.name
+            for path in (ROOT / "skills").glob("*/SKILL.md")
+        }
+        with tempfile.TemporaryDirectory() as home:
+            env = os.environ.copy()
+            env["HOME"] = home
+            command = ["sh", str(INSTALLER), "codex", "all"]
+
+            first = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            second = subprocess.run(
+                command,
+                cwd=ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            installed = Path(home) / ".agents" / "skills"
+            self.assertEqual({path.name for path in installed.iterdir()}, expected)
+            self.assertEqual(second.stdout.count("already installed"), len(expected))
+
     def test_installs_only_selected_skill(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             env = os.environ.copy()

@@ -267,6 +267,9 @@ gh skill preview gerald0057/skills smartrf-diagnostics
 gh skill preview gerald0057/skills smartrf-debugio
 gh skill preview gerald0057/skills redmine-access
 gh skill preview gerald0057/skills weekly-report
+gh skill preview gerald0057/skills fwscope
+gh skill preview gerald0057/skills logic-analyzer
+gh skill preview gerald0057/skills git-commit-guide
 ```
 
 安装全部 Skill 到 Codex：
@@ -487,9 +490,10 @@ python3 scripts/migrate-plugin-name.py \
   --apply
 ```
 
-脚本只迁移已经安装的旧整包插件：先刷新 `gerald0057-skills` marketplace、安装并确认
-`skills@gerald0057-skills`，然后才卸载旧插件。新插件安装或验证失败时保留旧插件；重复
-运行是安全的。迁移后重新启动客户端或新建任务，使新命名空间生效。
+脚本只迁移已经安装的旧整包插件：先刷新 `gerald0057-skills` marketplace，再安装或更新
+并确认 `skills@gerald0057-skills`，然后才卸载旧插件。即使新旧插件同时存在，也会先更新
+新插件；安装、更新或验证失败时保留旧插件。只有新插件时脚本保持无操作，后续新增 Skill
+按下文“更新整包插件”操作。迁移后重新启动客户端或新建任务，使新命名空间生效。
 
 ### 从 0.1.x 迁移到 0.2.0
 
@@ -541,11 +545,13 @@ Claude Code 用户将 `--agent codex` 替换为 `--agent claude-code`。
 
 ### 本地符号链接安装
 
-符号链接会直接读取仓库内容，只需更新仓库：
+已有符号链接会直接读取仓库中的更新；新增 Skill 仍需在拉取后重新运行安装脚本，以创建
+对应的新链接：
 
 ```bash
 cd /path/to/skills
 git pull
+./scripts/install-local.sh all
 ```
 
 卸载符号链接：
@@ -571,12 +577,25 @@ gh skill list \
 Codex 用户级默认路径为 `~/.agents/skills/<skill-name>`；Claude Code 用户级默认路径为
 `~/.claude/skills/<skill-name>`。不要删除来源不明的同名目录。
 
-### 更新或卸载 Claude Code 插件
+### 更新整包插件
+
+Codex：
+
+```bash
+codex plugin marketplace upgrade gerald0057-skills
+codex plugin add skills@gerald0057-skills
+```
+
+Claude Code：
 
 ```bash
 claude plugin marketplace update gerald0057-skills
 claude plugin update skills@gerald0057-skills
 ```
+
+更新后重新启动客户端或新建任务，才能加载新增或修改后的 Skill。
+
+### 卸载 Claude Code 插件
 
 仅卸载插件、保留 marketplace：
 

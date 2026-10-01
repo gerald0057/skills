@@ -129,6 +129,36 @@ class MigratePluginNameTests(unittest.TestCase):
         self.assertLess(calls.index(self.codex.install_new), calls.index(self.codex.remove_old))
         self.assertEqual(calls.count(self.codex.list_plugins), 3)
 
+    def test_existing_new_plugin_is_updated_before_old_is_removed(self) -> None:
+        calls: list[tuple[str, ...]] = []
+        states = iter(
+            (
+                plugin_list(self.codex.old_id, self.codex.new_id),
+                plugin_list(self.codex.old_id, self.codex.new_id),
+                plugin_list(self.codex.new_id),
+            )
+        )
+
+        def fake_run(command, *, json_output=False):
+            command = tuple(command)
+            calls.append(command)
+            if command == self.codex.list_plugins:
+                return next(states)
+            return None
+
+        with mock.patch.object(migration, "run_command", side_effect=fake_run):
+            migration.migrate_client(
+                self.codex,
+                apply=True,
+                skip_refresh=False,
+            )
+
+        self.assertLess(
+            calls.index(self.codex.refresh_marketplace),
+            calls.index(self.codex.update_new),
+        )
+        self.assertLess(calls.index(self.codex.update_new), calls.index(self.codex.remove_old))
+
     def test_already_migrated_is_idempotent(self) -> None:
         calls: list[tuple[str, ...]] = []
 
@@ -165,6 +195,7 @@ class MigratePluginNameTests(unittest.TestCase):
         claude = migration.build_client("claude-code", "project")
         self.assertEqual(claude.scope, "project")
         self.assertEqual(claude.install_new[-2:], ("--scope", "project"))
+        self.assertEqual(claude.update_new[-2:], ("--scope", "project"))
         self.assertIn("--keep-data", claude.remove_old)
 
         payload = {

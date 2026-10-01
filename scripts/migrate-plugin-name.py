@@ -31,6 +31,7 @@ class ClientCommands:
     list_plugins: tuple[str, ...]
     refresh_marketplace: tuple[str, ...]
     install_new: tuple[str, ...]
+    update_new: tuple[str, ...]
     remove_old: tuple[str, ...]
     scope: str | None = None
 
@@ -90,6 +91,7 @@ def build_client(name: str, claude_scope: str) -> ClientCommands:
                 MARKETPLACE,
             ),
             install_new=("codex", "plugin", "add", f"{NEW_PLUGIN}@{MARKETPLACE}"),
+            update_new=("codex", "plugin", "add", f"{NEW_PLUGIN}@{MARKETPLACE}"),
             remove_old=("codex", "plugin", "remove", f"{OLD_PLUGIN}@{MARKETPLACE}"),
         )
     if name == "claude-code":
@@ -108,6 +110,14 @@ def build_client(name: str, claude_scope: str) -> ClientCommands:
                 "claude",
                 "plugin",
                 "install",
+                f"{NEW_PLUGIN}@{MARKETPLACE}",
+                "--scope",
+                claude_scope,
+            ),
+            update_new=(
+                "claude",
+                "plugin",
+                "update",
                 f"{NEW_PLUGIN}@{MARKETPLACE}",
                 "--scope",
                 claude_scope,
@@ -187,10 +197,9 @@ def preview_actions(
         return []
 
     actions: list[tuple[str, ...]] = []
-    if not new_installed:
-        if not skip_refresh:
-            actions.append(client.refresh_marketplace)
-        actions.append(client.install_new)
+    if not skip_refresh:
+        actions.append(client.refresh_marketplace)
+    actions.append(client.update_new if new_installed else client.install_new)
     actions.append(client.remove_old)
     return actions
 
@@ -220,16 +229,15 @@ def migrate_client(client: ClientCommands, *, apply: bool, skip_refresh: bool) -
             print(f"would run: {shlex.join(command)}")
         return
 
+    if not skip_refresh:
+        run_command(client.refresh_marketplace)
+    run_command(client.update_new if new_installed else client.install_new)
+    old_installed, new_installed = read_state(client)
     if not new_installed:
-        if not skip_refresh:
-            run_command(client.refresh_marketplace)
-        run_command(client.install_new)
-        old_installed, new_installed = read_state(client)
-        if not new_installed:
-            raise MigrationError(
-                f"{client.name}: new plugin was not visible after installation; "
-                "old plugin was preserved"
-            )
+        raise MigrationError(
+            f"{client.name}: new plugin was not visible after installation or update; "
+            "old plugin was preserved"
+        )
 
     run_command(client.remove_old)
     old_installed, new_installed = read_state(client)

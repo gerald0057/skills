@@ -16,6 +16,7 @@ import redmine_client as client
 NORMAL_CONFIRM_OPERATIONS = [
     "issue.create",
     "issue.update",
+    "issue.publish",
     "issue.comment",
     "time_entry.create",
     "attachment.upload",
@@ -198,6 +199,8 @@ def default_policy(
         "max_mutations_per_confirmation": 1,
         "pending_ttl_seconds": 600,
         "max_attachment_bytes": 10_000_000,
+        "max_publish_attachments": 10,
+        "max_publish_total_bytes": 50_000_000,
         "max_attachment_download_bytes": 10_000_000,
         "max_time_entry_hours": 24,
     }
@@ -311,6 +314,18 @@ def update_permissions(profile_name: str) -> dict[str, Any]:
     updated["max_attachment_download_bytes"] = choose_integer_limit(
         "单个附件最大下载字节数",
         current.get("max_attachment_download_bytes", 10_000_000),
+        1,
+        500_000_000,
+    )
+    updated["max_publish_attachments"] = choose_integer_limit(
+        "单次发布最大附件数",
+        current.get("max_publish_attachments", 10),
+        1,
+        10,
+    )
+    updated["max_publish_total_bytes"] = choose_integer_limit(
+        "单次发布附件总字节数上限",
+        current.get("max_publish_total_bytes", 50_000_000),
         1,
         500_000_000,
     )

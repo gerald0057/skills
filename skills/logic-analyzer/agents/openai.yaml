@@ -1,0 +1,4 @@
+interface:
+  display_name: "Logic Analyzer"
+  short_description: "安全采集并流式检查、测量 DSView 数字逻辑波形文件"
+  default_prompt: "使用 $logic-analyzer 安全检查、采集或测量 DSView 数字波形。"

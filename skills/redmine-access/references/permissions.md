@@ -31,13 +31,14 @@ API Key 不会回显。不要让用户在聊天中粘贴凭据，也不要直接
 ```text
 issue.create
 issue.update
+issue.publish
 issue.comment
 time_entry.create
 attachment.upload
 attachment.download
 ```
 
-`issue.private_comment` 独立控制。`write_projects` 限制远程写入项目，`attachment_download_projects` 独立限制允许下载附件的项目。`issue_create_fields`、`issue_update_fields` 和 `custom_field_ids` 进一步限制字段；`max_time_entry_hours`、`max_attachment_bytes`、`max_attachment_download_bytes` 和 `pending_ttl_seconds` 限制单次影响。
+`issue.publish` 独立控制同一 Issue 的多附件操作包；旧配置缺少该权限时默认拒绝。若操作包更新 description，该字段还必须出现在 `issue_update_fields` 中。`issue.private_comment` 独立控制。`write_projects` 限制远程写入项目，`attachment_download_projects` 独立限制允许下载附件的项目。`issue_create_fields`、`issue_update_fields` 和 `custom_field_ids` 进一步限制字段；`max_publish_attachments`（最多 10）、`max_publish_total_bytes`、`max_time_entry_hours`、`max_attachment_bytes`、`max_attachment_download_bytes` 和 `pending_ttl_seconds` 限制单次影响。
 
 ## 服务端权限
 

@@ -8,14 +8,16 @@
 
 | Skill | 用途 | 目录 |
 | --- | --- | --- |
+| `fwscope` | 校验 ncm2 artifact bundle，并分析固件 RAM/Flash 占用与 RAM/XIP/ROM 执行路径 | [`skills/fwscope`](skills/fwscope/) |
+| `logic-analyzer` | 安全采集并流式检查、测量 DSView 数字逻辑波形 | [`skills/logic-analyzer`](skills/logic-analyzer/) |
 | `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
 | `smartrf-debugio` | 使用 gx-dsview-cli 采集并分析无线 DebugIO 时序 | [`skills/smartrf-debugio`](skills/smartrf-debugio/) |
-| `redmine-access` | 提供紧凑 Redmine 查询、逐次确认的附件下载与本地分析，以及安全写入 | [`skills/redmine-access`](skills/redmine-access/) |
+| `redmine-access` | 提供紧凑 Redmine 查询、经确认的附件下载与本地分析，以及同一 Issue 操作包的安全写入 | [`skills/redmine-access`](skills/redmine-access/) |
 | `weekly-report` | 根据 iBrain 项目看板整理本周总结并合并下周计划 | [`skills/weekly-report`](skills/weekly-report/) |
 | `git-commit-guide` | 根据实际变更生成或检查规范的中文 Git 提交信息 | [`skills/git-commit-guide`](skills/git-commit-guide/) |
 
 `redmine-access` 首次使用时通过本地交互式向导配置，API Key 保存在
-`~/.config/skills/redmine-access/`，不会写入本仓库。读取默认返回有限分页的摘要；附件下载和所有写入逐次确认，删除永久禁止。
+`~/.config/skills/redmine-access/`，不会写入本仓库。读取默认返回有限分页的摘要；附件下载和所有写入均需确认，同一 Issue 可将明确列出的多个附件与一次说明更新合为一个操作包，删除永久禁止。
 
 ## 仓库与发布边界
 

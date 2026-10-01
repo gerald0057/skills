@@ -9,6 +9,7 @@
 | Skill | 用途 | 目录 |
 | --- | --- | --- |
 | `fwscope` | 校验 ncm2 artifact bundle，并分析固件 RAM/Flash 占用与 RAM/XIP/ROM 执行路径 | [`skills/fwscope`](skills/fwscope/) |
+| `logic-analyzer` | 安全采集并流式检查、测量 DSView 数字逻辑波形 | [`skills/logic-analyzer`](skills/logic-analyzer/) |
 | `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
 | `smartrf-debugio` | 使用 gx-dsview-cli 采集并分析无线 DebugIO 时序 | [`skills/smartrf-debugio`](skills/smartrf-debugio/) |
 | `redmine-access` | 提供紧凑 Redmine 查询、逐次确认的附件下载与本地分析，以及安全写入 | [`skills/redmine-access`](skills/redmine-access/) |

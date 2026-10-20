@@ -66,6 +66,21 @@ class InstallLocalTests(unittest.TestCase):
                 (ROOT / "skills" / "redmine-access").resolve(),
             )
 
+    def test_gx_gitlab_install_creates_only_skill_link(self) -> None:
+        with tempfile.TemporaryDirectory() as home:
+            env = os.environ.copy()
+            env["HOME"] = home
+            result = subprocess.run(
+                ["sh", str(INSTALLER), "codex", "gx-gitlab"],
+                cwd=ROOT, env=env, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual({path.name for path in Path(home).iterdir()}, {".agents"})
+            installed = Path(home) / ".agents" / "skills" / "gx-gitlab"
+            self.assertTrue(installed.is_symlink())
+            self.assertEqual(installed.resolve(), (ROOT / "skills" / "gx-gitlab").resolve())
+            self.assertFalse((Path(home) / ".config").exists())
+
     def test_rejects_unknown_skill(self) -> None:
         with tempfile.TemporaryDirectory() as home:
             env = os.environ.copy()

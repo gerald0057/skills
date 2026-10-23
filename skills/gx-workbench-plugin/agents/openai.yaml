@@ -1,0 +1,4 @@
+interface:
+  display_name: "GX Workbench 插件开发"
+  short_description: "按宿主实际 API 和服务适配开发插件，定位并修复版本不兼容问题"
+  default_prompt: "使用 $gx-workbench-plugin 先识别目标 GX Workbench 的实际 API、服务和编译 SDK，再开发插件或修复兼容问题。"

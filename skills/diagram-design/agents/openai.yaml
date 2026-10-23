@@ -1,0 +1,4 @@
+interface:
+  display_name: "Diagram Design"
+  short_description: "使用中文系统字体生成自包含 HTML 与 SVG 图示"
+  default_prompt: "使用 $diagram-design 生成自包含 HTML 图示，使用中文系统字体，不生成 PNG。"

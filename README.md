@@ -8,6 +8,7 @@
 
 | Skill | 用途 | 目录 |
 | --- | --- | --- |
+| `diagram-design` | 使用中文系统字体生成自包含 HTML/SVG 图示；支持本地导入与离线自检 | [`skills/diagram-design`](skills/diagram-design/) |
 | `fwscope` | 校验 ncm2 artifact bundle，并分析固件 RAM/Flash 占用与 RAM/XIP/ROM 执行路径 | [`skills/fwscope`](skills/fwscope/) |
 | `logic-analyzer` | 安全采集并流式检查、测量 DSView 数字逻辑波形 | [`skills/logic-analyzer`](skills/logic-analyzer/) |
 | `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
@@ -628,3 +629,11 @@ GitHub Actions 和 GitLab CI 都会执行同一验证脚本。
 ## License
 
 [MIT](LICENSE)
+
+## Diagram Design 来源与安装
+
+该技能引入 https://github.com/cathrynlavery/diagram-design 的 `skills/diagram-design/`，固定到 `11b08eade8049c441ed3df1895e3b527c26c0fbe`，导入日期 2026-10-14。完整来源与局部适配见 [来源记录](skills/diagram-design/references/upstream-provenance.md)。本技能保留 [上游 MIT](skills/diagram-design/LICENSE) 及 [第三方声明](skills/diagram-design/THIRD_PARTY_LICENSES.md)，许可证仅适用于其对应内容。
+
+窄范围安装：`./scripts/install-local.sh codex diagram-design`。安装后在 Codex Desktop 的新会话查看技能并使用 `$diagram-design 请用中文系统字体绘制一个自包含 HTML 架构图，保留默认配色，不生成 PNG。`。文件和链接检查不代表 Desktop 已实际调用。
+
+默认使用 HTML/SVG，五个 Python 工具仅依赖标准库；不要求 PNG、Playwright 或 Chromium。上游插件命令及仓库开发校验器不随独立技能安装。回滚先移除用户技能目录中本技能对应的符号链接，再删除新增技能目录、`tests/test_diagram_design.py` 并撤销本次 README 两处新增内容；不得覆盖其他变更。

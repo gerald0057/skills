@@ -1,0 +1,4 @@
+interface:
+  display_name: "GX GitLab"
+  short_description: "只读查询 GitLab 项目、提交、协作与发布信息，并诊断 CI"
+  default_prompt: "使用 $gx-gitlab 查询指定 GitLab 项目的状态和信息，说明证据、访问范围与未验证部分。"

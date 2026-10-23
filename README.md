@@ -15,11 +15,19 @@
 | `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
 | `smartrf-debugio` | 使用 gx-dsview-cli 采集并分析无线 DebugIO 时序 | [`skills/smartrf-debugio`](skills/smartrf-debugio/) |
 | `redmine-access` | 提供紧凑 Redmine 查询、经确认的附件下载与本地分析，以及同一 Issue 操作包的安全写入 | [`skills/redmine-access`](skills/redmine-access/) |
+| `gx-gitlab` | 只读查询 GitLab 实例、项目、提交、Issue/MR、发布及包信息，并诊断 CI 状态与日志 | [`skills/gx-gitlab`](skills/gx-gitlab/) |
 | `weekly-report` | 根据 iBrain 项目看板整理本周总结并合并下周计划 | [`skills/weekly-report`](skills/weekly-report/) |
 | `git-commit-guide` | 根据实际变更生成或检查规范的中文 Git 提交信息 | [`skills/git-commit-guide`](skills/git-commit-guide/) |
 
 `redmine-access` 首次使用时通过本地交互式向导配置，API Key 保存在
 `~/.config/skills/redmine-access/`，不会写入本仓库。读取默认返回有限分页的摘要；附件下载和所有写入均需确认，同一 Issue 可将明确列出的多个附件与一次说明更新合为一个操作包，删除永久禁止。
+
+`gx-gitlab` 使用 Python 3.10+ 标准库（Linux/macOS/WSL），配置和 Token 保存在
+`~/.config/skills/gx-gitlab/`，不进入仓库。只提供 GET 查询，不触发 CI、合并 MR 或发布。
+连接配置只保存实例，不保存默认项目；安装不创建连接配置、不访问 GitLab。`status` 和默认 `doctor` 不查询项目，项目操作每次显式传入 `--project`，旧配置中的项目字段会被忽略。
+首次配置、隐藏登录、Token 更新、多项目/多实例和旧配置迁移见 [访问说明](skills/gx-gitlab/references/access.md)；
+日常命令、输出格式与隐私边界见 [查询说明](skills/gx-gitlab/references/queries.md)，
+流水线核对与日志定位见 [CI 说明](skills/gx-gitlab/references/ci.md)。
 
 ## 仓库与发布边界
 
@@ -41,7 +49,7 @@
 | 依赖 | 是否必需 | 用途 |
 | --- | --- | --- |
 | Git | 本地安装必需 | 克隆 GitHub、GitLab 仓库以及后续更新 |
-| Python 3 | 使用 `redmine-access` 或维护仓库时必需 | 运行受控 Redmine 客户端和仓库结构校验；不依赖第三方 Python 包 |
+| Python 3（`gx-gitlab` 要求 3.10+） | 使用连接类 Skill 或维护仓库时必需 | 运行受控 Redmine/GitLab 客户端和仓库结构校验；不依赖第三方 Python 包 |
 | curl 或 wget | 安装工具时可能需要 | 下载 Codex、Claude Code 或 GitHub CLI 的官方安装资源 |
 | OpenSSH 客户端 | 使用 SSH 克隆时必需 | 访问私有 GitLab 等 SSH Git 仓库 |
 | POSIX shell | 符号链接安装必需 | 运行 `scripts/install-local.sh`；Linux、macOS 和 WSL 可直接使用 |
@@ -268,6 +276,7 @@ Git 仓库内安装，适合测试或团队项目。
 gh skill preview gerald0057/skills smartrf-diagnostics
 gh skill preview gerald0057/skills smartrf-debugio
 gh skill preview gerald0057/skills redmine-access
+gh skill preview gerald0057/skills gx-gitlab
 gh skill preview gerald0057/skills weekly-report
 gh skill preview gerald0057/skills fwscope
 gh skill preview gerald0057/skills logic-analyzer

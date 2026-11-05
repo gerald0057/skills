@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "target": {"app": "sensor_hub", "board": "evaluation_board", "build_id": "build-001"},
+  "object_roots": ["../sdk", "./snapshot", "../toolchain"],
+  "path_maps": [{"prefix": "build/", "root": "./snapshot"}],
+  "module_rules": [
+    {"pattern": "(?:^|/)obj/drivers/([^/]+)/", "path": ["drivers", "{0}"]},
+    {"pattern": "(?:^|/)obj/rtos/", "path": ["rtos", "kernel"]},
+    {"pattern": "(?:^|/)obj/src/", "path": ["application", "core"]},
+    {"pattern": "(?:^|/)libc\\.a\\(", "path": ["common", "libc"]}
+  ],
+  "stack_symbols": ["main_stack"],
+  "stack_path": ["rtos", "stacks"],
+  "reserved_sections": {},
+  "direct_child_name": "self",
+  "build": {"native_commands": [["make", "clean"], ["make", "LTO=0"]]},
+  "sdk": {}
+}

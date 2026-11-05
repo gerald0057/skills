@@ -1,0 +1,4 @@
+interface:
+  display_name: "固件 Flash/RAM 占用报告"
+  short_description: "构建并核验固件产物，分层统计 Flash/RAM，生成统计明细与 PDF 报告"
+  default_prompt: "使用 $fwsize-report 构建指定固件并分析 Flash/RAM 分模块占用，先提供统计明细和版式预览。"

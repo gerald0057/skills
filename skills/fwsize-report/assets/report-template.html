@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>__TITLE__</title>
+<style>
+@page { size: A4 landscape; margin: 19mm 15mm 10mm;
+  @top-center { content: element(report-header); vertical-align: bottom; padding-bottom: 2.4mm; }
+  @bottom-right { content: "第 " counter(page) " / " counter(pages) " 页"; font: 8pt __FONT__; }
+}
+* { box-sizing: border-box; }
+html { font-family: __FONT__; color: #000; background: #fff; }
+body { margin: 0; }
+.page + .page { break-before: page; }
+.running { position: running(report-header); width: 267mm; font-size: 8.5pt; border-bottom: .6pt solid #000; padding-bottom: 2mm; }
+.page-intro { padding-bottom: .1px; }
+h1 { font-size: 15pt; line-height: 1.3; margin: 0 0 1.2mm; font-weight: 600; }
+h2 { margin: 0; font-size: 12pt; font-weight: 600; }
+.context { font-size: 8pt; margin-bottom: 2mm; line-height: 1.6; }
+.columns { display: flex; gap: 7mm; }
+.columns.solo { justify-content: center; }
+.column { width: calc((100% - 7mm)/2); }
+.column-heading { display: flex; justify-content: space-between; border-bottom: .4pt solid #000; padding-bottom: 1mm; }
+.amount { font-size: 12pt; font-weight: 600; }
+.note { font-size: 7.5pt; line-height: 1.6; min-height: 9mm; margin-top: 1mm; }
+svg { display: block; width: 100%; }
+.flow-block { padding-top: .1px; margin-bottom: __FLOW_GAP__px; break-inside: avoid; }
+.flow-block:last-child { margin-bottom: 0; }
+.detail-title { font-size: 11pt; border-bottom: .5pt solid #000; margin-bottom: 1.5mm; padding-bottom: 1mm; }
+.detail-title span { float: right; font-size: 7.4pt; font-weight: normal; }
+.detail h2, .detail .amount { font-size: 9pt; }
+.detail .column-heading { padding-bottom: .5mm; }
+.detail .note { font-size: 7.2pt; min-height: 7mm; margin-top: .6mm; }
+.detail-table { font-size: 7.8pt; }
+table { border-collapse: collapse; table-layout: fixed; width: 100%; font-size: 8pt; line-height: 1.4; }
+th { border-top: .5pt solid #000; border-bottom: .4pt solid #000; padding: 1mm 1.4mm; text-align: left; }
+td { border-bottom: .25pt solid #aaa; padding: 1mm 1.4mm; }
+td:first-child { overflow-wrap: anywhere; }
+.n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.appendix h2 { font-size: 10.5pt; margin: 3mm 0 1.5mm; }
+.meta { font-size: 8pt; line-height: 1.7; overflow-wrap: anywhere; }
+.evidence { font-size: 7pt; line-height: 1.7; overflow-wrap: anywhere; margin-top: 2.5mm; }
+</style></head><body>__BODY__</body></html>

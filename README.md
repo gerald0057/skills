@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | `diagram-design` | 使用中文系统字体生成自包含 HTML/SVG 图示；支持本地导入与离线自检 | [`skills/diagram-design`](skills/diagram-design/) |
 | `fwscope` | 校验 ncm2 artifact bundle，并分析固件 RAM/Flash 占用与 RAM/XIP/ROM 执行路径 | [`skills/fwscope`](skills/fwscope/) |
+| `fwsize-report` | 构建并核验固件，分层统计 Flash/RAM，生成 Markdown 明细和黑白 PDF 报告 | [`skills/fwsize-report`](skills/fwsize-report/) |
 | `gx-workbench-plugin` | 按宿主实际 API、服务和编译 SDK 开发通用插件，定位并修复版本不兼容 | [`skills/gx-workbench-plugin`](skills/gx-workbench-plugin/) |
 | `logic-analyzer` | 安全采集并流式检查、测量 DSView 数字逻辑波形 | [`skills/logic-analyzer`](skills/logic-analyzer/) |
 | `smartrf-diagnostics` | 分析 SmartRF v4 全量诊断、链路状态、统计与 PHY 异常 | [`skills/smartrf-diagnostics`](skills/smartrf-diagnostics/) |
@@ -57,7 +58,9 @@
 | Codex 或 Claude Code | 至少一个 | 实际加载和运行 Skill |
 | `gx-dsview-cli` 与兼容逻辑分析仪 | 可选 | 仅 `smartrf-debugio` 实时采集需要；离线分析和安装不需要 |
 
-本仓库不需要执行 `pip install`、`npm install` 或安装项目级 Python/Node.js 依赖。
+仓库安装、结构校验和核心脚本测试不需要项目级 Python/Node.js 依赖。
+`fwsize-report` 的统计核心使用 Python 3.11+ 标准库；PDF 生成另需 WeasyPrint、
+中文宋体风格字体，PDF 验证另需 Poppler。运行时依赖见对应 Skill，安装 Skill 不自动安装这些工具。
 Node.js 只在选择 npm 方式安装 Codex 或 Claude Code 时需要。
 
 #### 自动检查本地环境

@@ -1,7 +1,7 @@
 # Agent Skills
 
 集中维护、可分别安装的 Agent Skills 仓库。Skill 遵循开放的
-[Agent Skills 规范](https://agentskills.io/specification)，可供 Codex、Claude Code
+[Agent Skills 规范](https://agentskills.io/specification)，可供 Codex、Claude Code、OpenCode
 以及其他兼容客户端使用。
 
 ## Skills
@@ -55,7 +55,7 @@
 | OpenSSH 客户端 | 使用 SSH 克隆时必需 | 访问私有 GitLab 等 SSH Git 仓库 |
 | POSIX shell | 符号链接安装必需 | 运行 `scripts/install-local.sh`；Linux、macOS 和 WSL 可直接使用 |
 | GitHub CLI 2.90.0+ | 使用 `gh skill` 时必需 | 从 GitHub 安装，或从本地目录复制安装 Skill |
-| Codex 或 Claude Code | 至少一个 | 实际加载和运行 Skill |
+| Codex、Claude Code 或 OpenCode | 至少一个 | 实际加载和运行 Skill；OpenCode 按 V2 说明 |
 | `gx-dsview-cli` 与兼容逻辑分析仪 | 可选 | 仅 `smartrf-debugio` 实时采集需要；离线分析和安装不需要 |
 
 仓库安装、结构校验和核心脚本测试不需要项目级 Python/Node.js 依赖。
@@ -66,7 +66,7 @@ Node.js 只在选择 npm 方式安装 Codex 或 Claude Code 时需要。
 #### 自动检查本地环境
 
 在仓库根目录运行 Doctor，可以一次检查 Git、GitHub CLI、`gh skill`、Python 3、SSH
-以及 Codex、Claude Code：
+以及 Codex、Claude Code、OpenCode，并检查 `gh skill` 是否支持 OpenCode 目标：
 
 ```bash
 ./scripts/doctor.sh
@@ -78,19 +78,23 @@ Node.js 只在选择 npm 方式安装 Codex 或 Claude Code 时需要。
 Local environment doctor
 
 [PASS] git: git version 2.34.1 (/usr/bin/git)
-[PASS] gh: 2.97.0 (/usr/bin/gh)
+[PASS] gh: 2.102.0 (/usr/bin/gh)
 [PASS] gh skill: install command is available
+[PASS] gh skill: opencode agent is available
 [PASS] python: Python 3.13.13 (/opt/python/bin/python3)
 [PASS] ssh: OpenSSH_8.9p1, OpenSSL 3.0.2 (/usr/bin/ssh)
 [PASS] codex: codex-cli 0.146.0 (/home/user/.local/bin/codex)
 [PASS] claude: 2.1.222 (Claude Code) (/home/user/.local/bin/claude)
+[PASS] opencode: opencode v2.2.7 (/home/user/.local/bin/opencode)
 
-Summary: 7 passed, 0 warnings, 0 failures.
+Summary: 9 passed, 0 warnings, 0 failures.
 ```
 
 Doctor 只读取本地命令和版本信息，不联网、不修改配置，也不输出凭据。Git、GitHub CLI
 2.90.0+、`gh skill` 和 Python 3 缺失时显示 `FAIL` 并返回退出码 `1`；SSH 或 Agent
 未安装时仅显示 `WARN`。传入未知参数时返回退出码 `2`。
+`gh skill` 可用但不支持 OpenCode 目标时也仅告警，可升级 GitHub CLI 或改用符号链接安装。
+不使用 GitHub CLI 的本地符号链接安装无需满足 Doctor 中的 `gh` 检查。
 
 该脚本需要 POSIX shell；Linux、macOS 和 WSL 可直接运行。Windows 原生 PowerShell
 用户可按下面各节的验证命令逐项检查。
@@ -180,6 +184,9 @@ gh skill install --help
 ```
 
 输出版本必须不低于 `2.90.0`，并且第二条命令必须显示 `gh skill install` 帮助。
+OpenCode 用户还需确认帮助中的支持列表包含 `OpenCode (opencode)`；`2.90.0` 只是
+`gh skill` 的基础下限，不保证支持每个 Agent。本仓库已核实 GitHub CLI `2.102.0`
+提供该目标；不支持时请升级，或使用后文的符号链接安装。
 旧版本可按安装方式升级：
 
 ```bash
@@ -205,7 +212,7 @@ gh auth status
 
 #### 3. 安装目标 Agent
 
-只需安装计划使用的 Agent，不要求同时安装 Codex 和 Claude Code。
+只需安装计划使用的 Agent，不要求同时安装三个客户端。
 
 安装 Codex CLI（macOS、Linux 或 WSL）：
 
@@ -246,6 +253,17 @@ npm install -g @anthropic-ai/claude-code
 
 更多安装方式见 [Claude Code 官方文档](https://code.claude.com/docs/en/getting-started)。
 
+安装 OpenCode：按 [OpenCode 官方指南](https://opencode.ai/docs/) 选择适合本机的安装方式，
+然后验证并启动：
+
+```bash
+opencode --version
+opencode
+```
+
+首次运行时按客户端提示配置模型服务。本仓库不配置模型、密钥或 MCP；以下 OpenCode
+操作按 V2 编写，本地路径行为已在 `v2.2.7` 核实。
+
 #### 4. 最终环境检查
 
 从 GitHub 远程安装前，最少需要确认 `gh skill` 和目标 Agent：
@@ -253,9 +271,10 @@ npm install -g @anthropic-ai/claude-code
 ```bash
 gh --version
 gh skill install --help
-# 根据目标选择其中一项或两项
+# 根据目标选择需要的客户端
 codex --version
 claude --version
+opencode --version
 ```
 
 从本地仓库安装时，再检查：
@@ -301,6 +320,15 @@ gh skill install gerald0057/skills \
 gh skill install gerald0057/skills \
   --all \
   --agent claude-code \
+  --scope user
+```
+
+安装全部 Skill 到 OpenCode：
+
+```bash
+gh skill install gerald0057/skills \
+  --all \
+  --agent opencode \
   --scope user
 ```
 
@@ -377,6 +405,16 @@ gh skill install . \
   --scope user
 ```
 
+安装到 OpenCode：
+
+```bash
+gh skill install . \
+  --from-local \
+  --all \
+  --agent opencode \
+  --scope user
+```
+
 这种方式会把 Skill 复制到 Agent 的用户目录。仓库更新后，需要重新执行安装命令。
 
 #### 使用仓库脚本创建符号链接
@@ -392,17 +430,24 @@ gh skill install . \
 ```bash
 ./scripts/install-local.sh codex
 ./scripts/install-local.sh claude-code
+./scripts/install-local.sh opencode
 ```
 
 只安装一个 Skill，可在 Agent 参数后追加 Skill 名称：
 
 ```bash
 ./scripts/install-local.sh codex redmine-access
+./scripts/install-local.sh opencode redmine-access
 ./scripts/install-local.sh all redmine-access
 ```
 
 脚本创建用户级符号链接，不复制文件，也不会覆盖已有文件或目录。重复执行同一个安装
 命令是安全的，已存在且指向正确位置的链接会显示 `already installed`。
+
+`all`（也是不传参数时的默认值）会为 Codex、Claude Code、OpenCode 三个客户端创建链接，
+不要求安装三个客户端。OpenCode 原生目标为 `~/.config/opencode/skills/`；若设置了
+非空 `XDG_CONFIG_HOME`，则使用 `$XDG_CONFIG_HOME/opencode/skills/`，该变量应为绝对路径。
+脚本只创建 Skill 链接，不修改 `opencode.json(c)`、连接配置或凭据，也不安装运行依赖。
 
 ### 安装后验证
 
@@ -411,6 +456,7 @@ gh skill install . \
 ```bash
 gh skill list --agent codex --scope user
 gh skill list --agent claude-code --scope user
+gh skill list --agent opencode --scope user
 ```
 
 查看完整来源和安装路径：
@@ -433,7 +479,30 @@ $smartrf-diagnostics 请说明分析 srf_debug -a 的检查顺序，不要执行
 /smartrf-diagnostics 请说明诊断流程，不要执行命令。
 ```
 
-如果新安装的 Skill 没有出现，重新启动对应 Agent。
+在 OpenCode 中显式调用（`@`，不是 Codex 的 `$` 或 Claude Code 的 `/`）：
+
+```text
+@git-commit-guide 请说明提交信息规则，不要执行命令。
+@gx-gitlab 请只读取 references/queries.md 并说明项目查询参数，不要运行脚本或联网。
+```
+
+第一条验证 Skill 加载，第二条验证随 Skill 安装的相对路径资源可读；这些只读检查不代表
+远端服务或硬件已通过验收。Redmine 写入、附件下载、硬件采集等仍遵守各 Skill 的确认规则。
+
+Codex、Claude Code 中新安装的 Skill 没有出现时，重新启动对应 Agent。
+OpenCode 配置会自动重载；未刷新时先执行 `/reload`，无需为安装 Skill 重启后台服务。
+
+#### OpenCode 同名来源排查
+
+OpenCode 还兼容读取用户级 `~/.agents/skills/`、`~/.claude/skills/` 和项目级
+`.agents/skills/`、`.claude/skills/`；通过这些目录安装的 Skill 可能已经可用，无需重复安装。
+项目也可以使用原生 `.opencode/skills/`，因此 `gh skill --scope project` 使用兼容目录
+并不表示安装失败。`gh skill list` 只列出其自身管理的安装，不包含本脚本创建的链接。
+
+同名 ID 只加载一个定义。V2 优先级由低到高为：内置、Claude 兼容来源、Agents 兼容来源、
+OpenCode 原生用户目录、原生项目目录、显式 `skills` 配置来源。安装后内容不符时检查
+这些位置及 `opencode.json(c)` 的 `skills` 配置；不要覆盖或删除来源不明的同名 Skill。
+加载被拒绝时还需检查当前 Agent 的 `skill` 权限。详见 [OpenCode Skills 文档](https://opencode.ai/docs/skills)。
 
 ## Claude Code 插件安装（可选）
 
@@ -555,7 +624,8 @@ gh skill install . \
   --force
 ```
 
-Claude Code 用户将 `--agent codex` 替换为 `--agent claude-code`。
+Claude Code、OpenCode 用户分别将 `--agent codex` 替换为 `--agent claude-code`、`--agent opencode`。
+重新安装前先核对目标路径，尤其不要用 `--force` 覆盖本地符号链接或来源不明的安装。
 
 ### 本地符号链接安装
 
@@ -575,7 +645,13 @@ unlink "$HOME/.agents/skills/smartrf-diagnostics"
 unlink "$HOME/.agents/skills/smartrf-debugio"
 unlink "$HOME/.claude/skills/smartrf-diagnostics"
 unlink "$HOME/.claude/skills/smartrf-debugio"
+# OpenCode：仅对已确认属于本仓库的对应链接执行
+unlink "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills/smartrf-diagnostics"
+unlink "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/skills/smartrf-debugio"
 ```
+
+只执行实际安装的客户端对应命令。OpenCode 可能继续发现兼容目录中的同名 Skill；
+卸载原生链接不等于卸载其他客户端的共享来源。不要为卸载一个客户端而删除仍在使用的共享目录。
 
 ### 卸载 standalone skill
 
@@ -589,7 +665,9 @@ gh skill list \
 ```
 
 Codex 用户级默认路径为 `~/.agents/skills/<skill-name>`；Claude Code 用户级默认路径为
-`~/.claude/skills/<skill-name>`。不要删除来源不明的同名目录。
+`~/.claude/skills/<skill-name>`。OpenCode 原生用户级默认路径为
+`~/.config/opencode/skills/<skill-name>`（自定义配置目录见前文）；`gh skill` 的实际路径以
+`gh skill list` 为准。不要删除来源不明的同名目录。
 
 ### 更新整包插件
 

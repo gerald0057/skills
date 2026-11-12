@@ -90,8 +90,12 @@ if command -v gh >/dev/null 2>&1; then
     fail "gh: found at $gh_path but version check failed"
   fi
 
-  if gh skill install --help >/dev/null 2>&1; then
+  if gh_skill_help=$(gh skill install --help 2>&1); then
     pass "gh skill: install command is available"
+    case "$gh_skill_help" in
+      *'(opencode)'*) pass "gh skill: opencode agent is available" ;;
+      *) warn "gh skill: opencode agent is unavailable; upgrade GitHub CLI or use scripts/install-local.sh opencode" ;;
+    esac
   else
     fail "gh skill: install command is unavailable; upgrade GitHub CLI"
   fi
@@ -165,6 +169,18 @@ if command -v claude >/dev/null 2>&1; then
   fi
 else
   warn "claude: not found"
+fi
+
+if command -v opencode >/dev/null 2>&1; then
+  opencode_path=$(command -v opencode)
+  if opencode_output=$(opencode --version 2>&1); then
+    opencode_version=$(printf '%s\n' "$opencode_output" | last_nonempty_line)
+    pass "opencode: $opencode_version ($opencode_path)"
+  else
+    warn "opencode: found at $opencode_path but version check failed"
+  fi
+else
+  warn "opencode: not found"
 fi
 
 printf '\nSummary: %d passed, %d warnings, %d failures.\n' \

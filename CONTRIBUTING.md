@@ -9,6 +9,8 @@
 - `SKILL.md` 使用相对路径直接引用需要按需读取的资源，避免多层引用链。
 - 不在单个 Skill 中添加 README、安装指南或变更日志；仓库级说明统一维护在根目录。
 - `tests/` 中的测试代码属于仓库源文件，必须提交；只忽略测试缓存、覆盖率报告等生成物。
+- Codex、Claude Code、OpenCode 共用 `skills/` 唯一源码；不为客户端复制 Skill 或新增无必要的插件层。
+- OpenCode 按 V2 验证；`agents/openai.yaml` 是可选的 Codex UI 信息，其他客户端不依赖它。
 
 ## 新增 Skill
 
@@ -18,6 +20,15 @@
 4. 更新根目录 README 的 Skill 列表。
 5. 为有可执行逻辑的 Skill 在 `tests/` 中增加或更新测试。
 6. 运行仓库验证脚本。
+
+修改安装或环境检查逻辑时，补充隔离 `HOME`、`XDG_CONFIG_HOME` 或 `PATH` 的测试，
+不得写入维护者真实的客户端配置目录。`install-local.sh all` 同时覆盖三个客户端；
+必须验证单个/全部安装、重复安装、冲突拒绝和 OpenCode 自定义配置目录。
+Doctor 仅执行本地版本和帮助检查，缺少可选客户端只告警，不登录、不联网、不输出凭据。
+
+OpenCode 手工验收使用 `@git-commit-guide` 检查加载，再选带 `references/` 和 `scripts/`
+的 Skill 验证相对路径资源读取；不执行远端写入或硬件采集。记录实际客户端版本和验证范围，
+不把链接创建成功当作客户端已实际调用。未刷新时先使用 `/reload`。
 
 ```bash
 python3 scripts/validate-repository.py

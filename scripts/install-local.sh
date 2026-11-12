@@ -2,7 +2,7 @@
 set -eu
 
 usage() {
-  echo "Usage: $0 {codex|claude-code|all} [skill-name|all]" >&2
+  echo "Usage: $0 {codex|claude-code|opencode|all} [skill-name|all]" >&2
   exit 2
 }
 
@@ -64,9 +64,13 @@ case "$requested_agent" in
   claude-code)
     install_for claude-code "${HOME}/.claude/skills"
     ;;
+  opencode)
+    install_for opencode "${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills"
+    ;;
   all)
     install_for codex "${HOME}/.agents/skills"
     install_for claude-code "${HOME}/.claude/skills"
+    install_for opencode "${XDG_CONFIG_HOME:-${HOME}/.config}/opencode/skills"
     ;;
   *)
     usage

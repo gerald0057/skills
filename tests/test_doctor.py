@@ -27,7 +27,7 @@ class DoctorTests(unittest.TestCase):
         self.mock_gh()
         self.mock("python3", '[ "$*" = "--version" ] || exit 97\necho "Python 3.13.0"')
         self.mock("ssh", '[ "$*" = "-V" ] || exit 97\necho "OpenSSH_9.0" >&2')
-        for name in ("codex", "claude", "opencode"):
+        for name in ("codex", "claude", "opencode", "dsh"):
             self.mock(name, f'[ "$*" = "--version" ] || exit 97\necho "{name} v2.2.7"')
 
     def mock(self, name: str, body: str) -> None:
@@ -54,18 +54,19 @@ esac''')
         result = self.doctor()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("[PASS] opencode: opencode v2.2.7", result.stdout)
+        self.assertIn("[PASS] dsh: dsh v2.2.7", result.stdout)
         self.assertIn("[PASS] gh skill: opencode agent is available", result.stdout)
-        self.assertIn("Summary: 9 passed, 0 warnings, 0 failures.", result.stdout)
+        self.assertIn("Summary: 10 passed, 0 warnings, 0 failures.", result.stdout)
         self.assertEqual({path.name for path in self.home.iterdir()}, {"bin"})
 
     def test_missing_optional_agents_only_warns(self) -> None:
-        for name in ("codex", "claude", "opencode", "ssh"):
+        for name in ("codex", "claude", "opencode", "dsh", "ssh"):
             (self.bin / name).unlink()
         result = self.doctor()
         self.assertEqual(result.returncode, 0, result.stderr)
-        for name in ("codex", "claude", "opencode", "ssh"):
+        for name in ("codex", "claude", "opencode", "dsh", "ssh"):
             self.assertIn(f"[WARN] {name}: not found", result.stdout)
-        self.assertIn("4 warnings, 0 failures.", result.stdout)
+        self.assertIn("5 warnings, 0 failures.", result.stdout)
 
     def test_failed_opencode_version_only_warns(self) -> None:
         self.mock("opencode", "exit 1")

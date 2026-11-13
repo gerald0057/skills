@@ -183,6 +183,18 @@ else
   warn "opencode: not found"
 fi
 
+if command -v dsh >/dev/null 2>&1; then
+  dsh_path=$(command -v dsh)
+  if dsh_output=$(dsh --version 2>&1); then
+    dsh_version=$(printf '%s\n' "$dsh_output" | last_nonempty_line)
+    pass "dsh: $dsh_version ($dsh_path)"
+  else
+    warn "dsh: found at $dsh_path but version check failed"
+  fi
+else
+  warn "dsh: not found"
+fi
+
 printf '\nSummary: %d passed, %d warnings, %d failures.\n' \
   "$pass_count" "$warn_count" "$fail_count"
 

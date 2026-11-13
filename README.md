@@ -55,7 +55,7 @@
 | OpenSSH 客户端 | 使用 SSH 克隆时必需 | 访问私有 GitLab 等 SSH Git 仓库 |
 | POSIX shell | 符号链接安装必需 | 运行 `scripts/install-local.sh`；Linux、macOS 和 WSL 可直接使用 |
 | GitHub CLI 2.90.0+ | 使用 `gh skill` 时必需 | 从 GitHub 安装，或从本地目录复制安装 Skill |
-| Codex、Claude Code 或 OpenCode | 至少一个 | 实际加载和运行 Skill；OpenCode 按 V2 说明 |
+| Codex、Claude Code、OpenCode 或 DSH | 至少一个 | 实际加载和运行 Skill；OpenCode 按 V2 说明 |
 | `gx-dsview-cli` 与兼容逻辑分析仪 | 可选 | 仅 `smartrf-debugio` 实时采集需要；离线分析和安装不需要 |
 
 仓库安装、结构校验和核心脚本测试不需要项目级 Python/Node.js 依赖。
@@ -66,7 +66,7 @@ Node.js 只在选择 npm 方式安装 Codex 或 Claude Code 时需要。
 #### 自动检查本地环境
 
 在仓库根目录运行 Doctor，可以一次检查 Git、GitHub CLI、`gh skill`、Python 3、SSH
-以及 Codex、Claude Code、OpenCode，并检查 `gh skill` 是否支持 OpenCode 目标：
+以及 Codex、Claude Code、OpenCode、DSH，并检查 `gh skill` 是否支持 OpenCode 目标：
 
 ```bash
 ./scripts/doctor.sh
@@ -86,8 +86,9 @@ Local environment doctor
 [PASS] codex: codex-cli 0.146.0 (/home/user/.local/bin/codex)
 [PASS] claude: 2.1.222 (Claude Code) (/home/user/.local/bin/claude)
 [PASS] opencode: opencode v2.2.7 (/home/user/.local/bin/opencode)
+[PASS] dsh: 0.2.2-rc.1 (/home/user/.local/share/deepseek-harness/bin/dsh)
 
-Summary: 9 passed, 0 warnings, 0 failures.
+Summary: 10 passed, 0 warnings, 0 failures.
 ```
 
 Doctor 只读取本地命令和版本信息，不联网、不修改配置，也不输出凭据。Git、GitHub CLI
@@ -430,6 +431,7 @@ gh skill install . \
 ```bash
 ./scripts/install-local.sh codex
 ./scripts/install-local.sh claude-code
+./scripts/install-local.sh dsh
 ./scripts/install-local.sh opencode
 ```
 
@@ -444,9 +446,13 @@ gh skill install . \
 脚本创建用户级符号链接，不复制文件，也不会覆盖已有文件或目录。重复执行同一个安装
 命令是安全的，已存在且指向正确位置的链接会显示 `already installed`。
 
-`all`（也是不传参数时的默认值）会为 Codex、Claude Code、OpenCode 三个客户端创建链接，
-不要求安装三个客户端。OpenCode 原生目标为 `~/.config/opencode/skills/`；若设置了
-非空 `XDG_CONFIG_HOME`，则使用 `$XDG_CONFIG_HOME/opencode/skills/`，该变量应为绝对路径。
+`all`（也是不传参数时的默认值）会为 Codex、Claude Code、DSH、OpenCode 四个客户端创建链接，
+不要求安装四个客户端。DSH 原生目标为 `${DSH_HOME:-~/.dsh}/skills`；若设置了非空
+`DSH_HOME`，则使用 `$DSH_HOME/skills`，该变量应为绝对路径。DSH 也会读取
+`~/.agents/skills`（Codex 目标）以及项目级 `.dsh/skills`、`.agents/skills`；
+同名时 `~/.dsh/skills` 优先级高于 `~/.agents/skills`。OpenCode 原生目标为
+`~/.config/opencode/skills/`；若设置了非空 `XDG_CONFIG_HOME`，则使用
+`$XDG_CONFIG_HOME/opencode/skills/`，该变量应为绝对路径。
 脚本只创建 Skill 链接，不修改 `opencode.json(c)`、连接配置或凭据，也不安装运行依赖。
 
 ### 安装后验证
@@ -489,7 +495,17 @@ $smartrf-diagnostics 请说明分析 srf_debug -a 的检查顺序，不要执行
 第一条验证 Skill 加载，第二条验证随 Skill 安装的相对路径资源可读；这些只读检查不代表
 远端服务或硬件已通过验收。Redmine 写入、附件下载、硬件采集等仍遵守各 Skill 的确认规则。
 
+在 DSH 中可用 `/skill-name` 显式调用，或让模型按目录描述自动加载：
+
+```text
+/smartrf-diagnostics 请说明诊断流程，不要执行命令。
+```
+
+DSH 的技能来自 `${DSH_HOME:-~/.dsh}/skills`（`install-local.sh dsh` 的安装目标），
+也会读取 `~/.agents/skills` 等兼容目录；两者同名时 `~/.dsh/skills` 优先。
+
 Codex、Claude Code 中新安装的 Skill 没有出现时，重新启动对应 Agent。
+DSH 的 skill 目录带 watcher，通常无需重启，新会话即可确认目录刷新。
 OpenCode 配置会自动重载；未刷新时先执行 `/reload`，无需为安装 Skill 重启后台服务。
 
 #### OpenCode 同名来源排查

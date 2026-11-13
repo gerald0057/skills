@@ -109,6 +109,7 @@ class OpenCodeInstallTests(unittest.TestCase):
         self.env = os.environ.copy()
         self.env["HOME"] = str(self.home)
         self.env.pop("XDG_CONFIG_HOME", None)
+        self.env.pop("DSH_HOME", None)
         self.target = self.home / ".config" / "opencode" / "skills"
 
     def install(self, *arguments: str, installer: Path = INSTALLER) -> subprocess.CompletedProcess[str]:
@@ -163,6 +164,7 @@ class OpenCodeInstallTests(unittest.TestCase):
                 for target in (
                     self.home / ".agents" / "skills",
                     self.home / ".claude" / "skills",
+                    self.home / ".dsh" / "skills",
                     self.target,
                 ):
                     self.assertEqual(
@@ -178,6 +180,7 @@ class OpenCodeInstallTests(unittest.TestCase):
         for target in (
             self.home / ".agents" / "skills",
             self.home / ".claude" / "skills",
+            self.home / ".dsh" / "skills",
             config / "opencode" / "skills",
         ):
             self.assertTrue((target / "git-commit-guide").is_symlink())
@@ -237,6 +240,65 @@ class OpenCodeInstallTests(unittest.TestCase):
         result = self.install("opencode", "example", installer=installer)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.target / "example").resolve(), skill.resolve())
+
+
+class DshInstallTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory(prefix="skills dsh ")
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name)
+        self.home = self.base / "home"
+        self.home.mkdir()
+        self.env = os.environ.copy()
+        self.env["HOME"] = str(self.home)
+        self.env.pop("DSH_HOME", None)
+        self.env.pop("XDG_CONFIG_HOME", None)
+        self.target = self.home / ".dsh" / "skills"
+
+    def install(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["sh", str(INSTALLER), *arguments],
+            cwd=self.base, env=self.env, text=True, capture_output=True, check=False,
+        )
+
+    def test_default_root_all_skills_and_repeat_install(self) -> None:
+        expected = {path.parent.name for path in (ROOT / "skills").glob("*/SKILL.md")}
+        first = self.install("dsh")
+        second = self.install("dsh", "all")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual({path.name for path in self.target.iterdir()}, expected)
+        self.assertEqual(second.stdout.count("already installed"), len(expected))
+        for name in expected:
+            self.assertTrue((self.target / name).is_symlink())
+            self.assertEqual((self.target / name).resolve(), (ROOT / "skills" / name).resolve())
+
+    def test_dsh_home_override(self) -> None:
+        custom = self.base / "custom dsh home"
+        self.env["DSH_HOME"] = str(custom)
+        result = self.install("dsh", "gx-gitlab")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            (custom / "skills" / "gx-gitlab").resolve(),
+            (ROOT / "skills" / "gx-gitlab").resolve(),
+        )
+        self.assertFalse(self.target.exists())
+
+    def test_empty_dsh_home_uses_default(self) -> None:
+        self.env["DSH_HOME"] = ""
+        result = self.install("dsh", "git-commit-guide")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.target / "git-commit-guide").is_symlink())
+
+    def test_selected_skill_creates_only_skill_link(self) -> None:
+        result = self.install("dsh", "gx-gitlab")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual({path.name for path in self.home.iterdir()}, {".dsh"})
+        self.assertEqual({path.name for path in (self.home / ".dsh").iterdir()}, {"skills"})
+        self.assertEqual({path.name for path in self.target.iterdir()}, {"gx-gitlab"})
+        self.assertFalse((self.home / ".agents").exists())
+        self.assertFalse((self.home / ".claude").exists())
+        self.assertFalse((self.home / ".config").exists())
 
 
 if __name__ == "__main__":
